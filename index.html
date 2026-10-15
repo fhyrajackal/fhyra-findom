@@ -305,6 +305,15 @@ const firebaseConfig = {
 };
 // =============================================
 
+ console.log("Config object:", firebaseConfig);
+try {
+  firebase.initializeApp(firebaseConfig);
+  console.log("Firebase initialized successfully");
+  console.log("Database URL from app:", firebase.app().options.databaseURL);
+} catch (e) {
+  console.error("Firebase init failed:", e);
+}
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
