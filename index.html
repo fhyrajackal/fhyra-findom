@@ -11,6 +11,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -490,6 +491,13 @@ document.getElementById("chatInput").addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendMessage();
 });
 
+// Put these near the top of your script with your real values
+const EMAILJS_PUBLIC_KEY = "6yUaltYoDr-gtit33";
+const EMAILJS_SERVICE_ID = "service_yhtrk8j";
+const EMAILJS_TEMPLATE_ID = "template_49qhzsr";
+
+emailjs.init(EMAILJS_PUBLIC_KEY);
+
 function initiateSession() {
   isInitiator = true;
   const code = Date.now().toString();
@@ -497,9 +505,26 @@ function initiateSession() {
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
 
-  setStatus("Waiting for Fhyra to ruin you…");
+  setStatus("Waiting for joiner…");
   startChat(code);
 
+  // Build a direct join link
+  const joinLink = window.location.origin + window.location.pathname + "?start=" + code;
+
+  // Send the email
+  setStatus("Sending join email…");
+  emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+    to_email: "hanychlaura@gmail.com",
+    join_link: joinLink,
+    room_code: code
+  }).then(() => {
+    setStatus("Join email sent — waiting for you to open it");
+  }).catch((err) => {
+    console.error("Email failed:", err);
+    setStatus("Email failed — share the room code manually");
+  });
+
+  // Still update the URL for convenience
   const url = new URL(window.location);
   url.searchParams.set("start", code);
   window.history.replaceState({}, "", url);
