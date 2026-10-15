@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#120306">
+<title>Worship the true Goddess</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #120306;
+    color: #fff;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 1rem;
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    position: relative;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -30%;
+    background:
+      radial-gradient(ellipse at 25% 40%, rgba(140, 30, 50, 0.55) 0%, transparent 45%),
+      radial-gradient(ellipse at 75% 60%, rgba(100, 15, 35, 0.7) 0%, transparent 50%),
+      radial-gradient(circle at 50% 30%, rgba(180, 50, 70, 0.3) 0%, transparent 40%),
+      radial-gradient(ellipse at 40% 80%, rgba(60, 5, 15, 0.85) 0%, transparent 55%),
+      radial-gradient(circle at 60% 70%, rgba(200, 80, 40, 0.15) 0%, transparent 35%);
+    animation: stomachPulse 14s ease-in-out infinite, stomachShift 20s linear infinite;
+    z-index: -3;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(circle at 30% 20%, rgba(255, 120, 140, 0.08) 0%, transparent 30%),
+      radial-gradient(circle at 70% 80%, rgba(180, 60, 40, 0.06) 0%, transparent 25%),
+      repeating-radial-gradient(circle at 50% 50%, transparent 0, transparent 80px, rgba(160, 40, 60, 0.03) 81px, transparent 82px);
+    z-index: -2;
+    pointer-events: none;
+    animation: subtleGlow 8s ease-in-out infinite;
+  }
+  @keyframes stomachPulse {
+    0%, 100% { transform: scale(1) rotate(0deg); }
+    50% { transform: scale(1.06) rotate(0.5deg); }
+  }
+  @keyframes stomachShift {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 2% 3%; }
+  }
+  @keyframes subtleGlow {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+  }
+  #bubbles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    overflow: hidden;
+  }
+  .bubble {
+    position: absolute;
+    bottom: -40px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(255, 180, 190, 0.7), rgba(180, 40, 60, 0.3) 70%, transparent);
+    border: 1px solid rgba(255, 150, 160, 0.4);
+    animation: rise linear forwards;
+    opacity: 0.8;
+  }
+  @keyframes rise {
+    0% { transform: translateY(0) scale(0.6); opacity: 0; }
+    10% { opacity: 0.85; }
+    90% { opacity: 0.7; }
+    100% { transform: translateY(-110vh) scale(1.1); opacity: 0; }
+  }
+  h1 {
+    margin: 0.5rem 0 1.2rem;
+    font-weight: 300;
+    letter-spacing: 1px;
+    text-align: center;
+    text-shadow: 0 0 25px rgba(180, 40, 60, 0.6);
+    font-size: clamp(1.5rem, 7vw, 2.1rem);
+  }
+  .container {
+    display: flex;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 520px;
+  }
+  .box {
+    background: rgba(15, 4, 8, 0.72);
+    border: 1px solid rgba(160, 50, 70, 0.45);
+    border-radius: 16px;
+    padding: 1.4rem 1rem;
+    min-width: 140px;
+    flex: 1 1 160px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(80, 10, 25, 0.7), inset 0 0 25px rgba(120, 30, 50, 0.25);
+    backdrop-filter: blur(6px);
+  }
+  .box h2 {
+    margin: 0 0 0.6rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #d08090;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .value {
+    font-size: clamp(2rem, 12vw, 2.8rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1px;
+    text-shadow: 0 0 18px rgba(255, 100, 120, 0.35);
+  }
+  #amount { color: #ff7a95; }
+  #time { color: #ffc2ce; }
+  .controls, .room, .payment-buttons, .end-section {
+    margin-top: 1.4rem;
+    text-align: center;
+    width: 100%;
+    max-width: 420px;
+  }
+  button, input {
+    padding: 1rem 1.3rem;
+    font-size: 1.05rem;
+    border-radius: 12px;
+    border: none;
+    margin: 0.35rem;
+    min-height: 52px;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  button {
+    background: #c0264a;
+    color: white;
+    cursor: pointer;
+    font-weight: 500;
+    width: min(100%, 280px);
+  }
+  button:active { background: #a21a3a; transform: scale(0.98); }
+  button.end-btn { background: #7f1d1d; }
+  button.end-btn:active { background: #991b1b; }
+  button.pay-btn { background: #0070ba; width: min(100%, 220px); }
+  button.pay-btn:active { background: #005ea6; }
+  button.throne-btn { background: #7c3aed; width: min(100%, 220px); }
+  button.throne-btn:active { background: #6d28d9; }
+  button.retry-btn { background: #4a5568; width: min(100%, 220px); }
+  input {
+    background: rgba(25, 6, 10, 0.85);
+    color: white;
+    border: 1px solid rgba(160, 50, 70, 0.5);
+    width: min(100%, 280px);
+    font-size: 16px;
+  }
+  .room, .end-section { font-size: 1.05rem; line-height: 1.5; }
+  .room span, .end-section span {
+    font-family: ui-monospace, monospace;
+    background: rgba(35, 8, 12, 0.85);
+    padding: 0.45rem 0.8rem;
+    border-radius: 8px;
+    border: 1px solid rgba(160, 50, 70, 0.35);
+    word-break: break-all;
+    display: inline-block;
+    margin: 0.3rem 0;
+  }
+  .payment-buttons { display: none; }
+  .payment-buttons a { text-decoration: none; display: block; margin: 0.4rem 0; }
+  #status {
+    margin: 0.6rem 0 0.2rem;
+    color: #d08090;
+    font-size: 0.95rem;
+    min-height: 1.3em;
+    text-align: center;
+  }
+  #chatBox {
+    display: none;
+    width: 100%;
+    max-width: 420px;
+    margin-top: 1.2rem;
+    background: rgba(15, 4, 8, 0.8);
+    border: 1px solid rgba(160, 50, 70, 0.45);
+    border-radius: 16px;
+    padding: 0.8rem;
+    backdrop-filter: blur(6px);
+  }
+  #messages {
+    height: 180px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+    margin-bottom: 0.7rem;
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
+  #messages div {
+    margin: 0.35rem 0;
+    padding: 0.45rem 0.7rem;
+    border-radius: 8px;
+    word-wrap: break-word;
+  }
+  .msg-self { background: rgba(160, 40, 60, 0.4); text-align: right; }
+  .msg-other { background: rgba(80, 20, 40, 0.4); }
+  #chatRow {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  #chatInput {
+    flex: 1;
+    margin: 0;
+    width: auto;
+    min-width: 0;
+  }
+  #sendBtn {
+    width: auto;
+    flex-shrink: 0;
+    padding-left: 1.1rem;
+    padding-right: 1.1rem;
+  }
+  #retryContainer { display: none; margin-top: 0.8rem; }
+</style>
+</head>
+<body>
+  <div id="bubbles"></div>
+  <h1>Worship the true Goddess</h1>
+
+  <div class="container">
+    <div class="box">
+      <h2>Amount to be tributed</h2>
+      <div class="value" id="amount">$0.00</div>
+    </div>
+    <div class="box">
+      <h2>Time serving Fhyra</h2>
+      <div class="value" id="time">00:00:00</div>
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+  <div class="controls" id="controls">
+    <button onclick="initiateSession()">Initiate Session</button>
+    <div style="margin: 0.7rem 0; color: #b07080;">or</div>
+    <input type="text" id="roomInput" placeholder="Enter room code" inputmode="numeric" autocomplete="off" />
+    <button onclick="joinSession()">Join Session</button>
+  </div>
+
+  <div class="room" id="roomDisplay" style="display:none;">
+    Room Code:<br>
+    <span id="roomCode"></span><br>
+    <button onclick="copyCode()">Copy Code</button>
+    <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Share this code so the other person can join.</p>
+    <div id="endButtonContainer"></div>
+  </div>
+
+  <div class="end-section" id="endSection" style="display:none;">
+    Session Ended<br>
+    End Code:<br>
+    <span id="endCode"></span><br>
+    <button onclick="copyEndCode()">Copy End Code</button>
+    <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Share this end code with the other person.</p>
+  </div>
+
+  <div class="payment-buttons" id="paymentButtons">
+    <a id="paypalLink" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener"><button class="pay-btn">Pay with PayPal</button></a>
+    <a href="https://throne.com/fhyrajackal" target="_blank" rel="noopener"><button class="throne-btn">Pay with Throne</button></a>
+  </div>
+
+  <div class="controls" id="joinEndControls" style="display:none;">
+    <input type="text" id="endInput" placeholder="Enter end code" inputmode="numeric" autocomplete="off" />
+    <button onclick="applyEndCode()">Apply End Code</button>
+  </div>
+
+  <div id="retryContainer">
+    <button class="retry-btn" onclick="retryConnection()">Retry Connection</button>
+  </div>
+
+  <div id="chatBox">
+    <div id="messages"></div>
+    <div id="chatRow">
+      <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off" />
+      <button id="sendBtn" onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+<script>
+let startTime = null;
+let endTime = null;
+let animationId = null;
+let lastFrame = 0;
+let isInitiator = false;
+let bubbleInterval = null;
+let bubbleStartTimeout = null;
+
+let peer = null;
+let conn = null;
+let currentRoomCode = null;
+let retryCount = 0;
+const MAX_RETRIES = 3;
+
+const RATE_PER_MINUTE = 3;
+
+const peerConfig = {
+  config: {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+      { urls: "stun:stun3.l.google.com:19302" },
+      { urls: "stun:stun4.l.google.com:19302" }
+    ]
+  }
+};
+
+function setStatus(msg) {
+  document.getElementById("status").textContent = msg || "";
+}
+
+function showRetry(show) {
+  document.getElementById("retryContainer").style.display = show ? "block" : "none";
+}
+
+function formatTime(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600).toString().padStart(2, "0");
+  const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, "0");
+  const s = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+function getElapsedMs() {
+  if (!startTime) return 0;
+  const now = endTime ? endTime : Date.now();
+  return Math.max(0, now - startTime);
+}
+
+function getFinalAmount() {
+  const elapsedMs = getElapsedMs();
+  return ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
+}
+
+function updateDisplay() {
+  if (!startTime) return;
+  const elapsedMs = getElapsedMs();
+  const amount = (elapsedMs / 60000) * RATE_PER_MINUTE;
+  document.getElementById("amount").textContent = "$" + amount.toFixed(2);
+  document.getElementById("time").textContent = formatTime(elapsedMs);
+}
+
+function loop(timestamp) {
+  if (!startTime || endTime) return;
+  if (timestamp - lastFrame >= 1000 / 30) {
+    updateDisplay();
+    lastFrame = timestamp;
+  }
+  animationId = requestAnimationFrame(loop);
+}
+
+function startLoop() {
+  if (animationId) cancelAnimationFrame(animationId);
+  lastFrame = 0;
+  if (!endTime) animationId = requestAnimationFrame(loop);
+  updateDisplay();
+}
+
+function spawnBubble() {
+  const bubbles = document.getElementById("bubbles");
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  const size = 12 + Math.random() * 40;
+  const left = Math.random() * 100;
+  const duration = 6 + Math.random() * 8;
+  const delay = Math.random() * 0.5;
+  bubble.style.width = size + "px";
+  bubble.style.height = size + "px";
+  bubble.style.left = left + "%";
+  bubble.style.animationDuration = duration + "s";
+  bubble.style.animationDelay = delay + "s";
+  if (Math.random() > 0.7) {
+    bubble.style.background = "radial-gradient(circle at 30% 30%, rgba(255, 200, 100, 0.6), rgba(160, 80, 30, 0.35) 70%, transparent)";
+  }
+  bubbles.appendChild(bubble);
+  setTimeout(() => bubble.remove(), (duration + delay) * 1000);
+}
+
+function startBubbles() {
+  bubbleStartTimeout = setTimeout(() => {
+    spawnBubble();
+    bubbleInterval = setInterval(() => {
+      const count = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < count; i++) {
+        setTimeout(spawnBubble, Math.random() * 800);
+      }
+    }, 1200 + Math.random() * 1800);
+  }, 25000);
+}
+
+function stopBubbles() {
+  if (bubbleStartTimeout) clearTimeout(bubbleStartTimeout);
+  if (bubbleInterval) clearInterval(bubbleInterval);
+  document.getElementById("bubbles").innerHTML = "";
+}
+
+function addMessage(text, isSelf) {
+  const messages = document.getElementById("messages");
+  const div = document.createElement("div");
+  div.className = isSelf ? "msg-self" : "msg-other";
+  div.textContent = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function setupConnection(connection) {
+  conn = connection;
+  conn.on("open", () => {
+    document.getElementById("chatBox").style.display = "block";
+    addMessage("Connected! You can chat now.", false);
+    setStatus("Connected");
+    showRetry(false);
+    retryCount = 0;
+  });
+  conn.on("data", (data) => addMessage(data, false));
+  conn.on("close", () => {
+    addMessage("Connection closed.", false);
+    setStatus("Connection closed");
+    showRetry(true);
+  });
+  conn.on("error", (err) => {
+    console.error(err);
+    setStatus("Connection error");
+    showRetry(true);
+  });
+}
+
+function attemptConnect(code, isRetry = false) {
+  if (peer) {
+    try { peer.destroy(); } catch (e) {}
+    peer = null;
+  }
+  conn = null;
+
+  setStatus(isRetry ? `Retrying connection (${retryCount}/${MAX_RETRIES})…` : "Connecting…");
+  showRetry(false);
+
+  peer = new Peer(null, peerConfig);
+
+  peer.on("open", () => {
+    const connection = peer.connect(code, { reliable: true });
+    setupConnection(connection);
+
+    // Timeout fallback if no open event
+    setTimeout(() => {
+      if (!conn || !conn.open) {
+        handleConnectFailure();
+      }
+    }, 8000);
+  });
+
+  peer.on("error", (err) => {
+    console.error(err);
+    handleConnectFailure();
+  });
+}
+
+function handleConnectFailure() {
+  retryCount++;
+  if (retryCount <= MAX_RETRIES) {
+    setStatus(`Connection failed — auto-retrying (${retryCount}/${MAX_RETRIES})…`);
+    setTimeout(() => attemptConnect(currentRoomCode, true), 2000);
+  } else {
+    setStatus("Could not connect. Check the code and try again.");
+    showRetry(true);
+  }
+}
+
+function retryConnection() {
+  if (!currentRoomCode) return;
+  retryCount = 0;
+  attemptConnect(currentRoomCode);
+}
+
+function sendMessage() {
+  const input = document.getElementById("chatInput");
+  const text = input.value.trim();
+  if (!text || !conn || !conn.open) return;
+  conn.send(text);
+  addMessage(text, true);
+  input.value = "";
+}
+
+document.getElementById("chatInput").addEventListener("keypress", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
+
+function initiateSession() {
+  isInitiator = true;
+  startTime = Date.now();
+  const code = startTime.toString();
+  currentRoomCode = code;
+  document.getElementById("roomCode").textContent = code;
+  document.getElementById("roomDisplay").style.display = "block";
+  document.getElementById("controls").style.display = "none";
+  document.getElementById("endButtonContainer").innerHTML =
+    '<button class="end-btn" onclick="endSession()">End Session</button>';
+
+  setStatus("Starting…");
+  peer = new Peer(code, peerConfig);
+  peer.on("open", () => setStatus("Waiting for the other person…"));
+  peer.on("connection", setupConnection);
+  peer.on("error", (err) => {
+    console.error(err);
+    setStatus("Peer error: " + (err.type || "failed to start"));
+  });
+
+  startLoop();
+  startBubbles();
+
+  const url = new URL(window.location);
+  url.searchParams.set("start", code);
+  window.history.replaceState({}, "", url);
+}
+
+function joinSession() {
+  isInitiator = false;
+  const code = document.getElementById("roomInput").value.trim();
+  if (!code || isNaN(code)) {
+    alert("Please enter a valid room code");
+    return;
+  }
+  currentRoomCode = code;
+  startTime = parseInt(code, 10);
+  document.getElementById("roomCode").textContent = code;
+  document.getElementById("roomDisplay").style.display = "block";
+  document.getElementById("controls").style.display = "none";
+  document.getElementById("joinEndControls").style.display = "block";
+
+  retryCount = 0;
+  attemptConnect(code);
+
+  startLoop();
+  startBubbles();
+}
+
+function endSession() {
+  if (!isInitiator || endTime) return;
+  endTime = Date.now();
+  if (animationId) cancelAnimationFrame(animationId);
+  updateDisplay();
+  stopBubbles();
+
+  if (conn && conn.open) conn.send("[Session ended by initiator]");
+
+  const endCode = endTime.toString();
+  document.getElementById("endCode").textContent = endCode;
+  document.getElementById("endSection").style.display = "block";
+  document.getElementById("endButtonContainer").innerHTML = "";
+  setStatus("Session ended");
+  showRetry(false);
+
+  const url = new URL(window.location);
+  url.searchParams.set("end", endCode);
+  window.history.replaceState({}, "", url);
+}
+
+function applyEndCode() {
+  const code = document.getElementById("endInput").value.trim();
+  if (!code || isNaN(code)) {
+    alert("Please enter a valid end code");
+    return;
+  }
+  endTime = parseInt(code, 10);
+  if (animationId) cancelAnimationFrame(animationId);
+  updateDisplay();
+  stopBubbles();
+
+  const finalAmount = getFinalAmount();
+  document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
+
+  document.getElementById("joinEndControls").style.display = "none";
+  document.getElementById("paymentButtons").style.display = "block";
+  setStatus("");
+  showRetry(false);
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return navigator.clipboard.writeText(text);
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand("copy");
+    return Promise.resolve();
+  } catch (e) {
+    return Promise.reject(e);
+  } finally {
+    document.body.removeChild(ta);
+  }
+}
+
+function copyCode() {
+  const code = document.getElementById("roomCode").textContent;
+  copyToClipboard(code)
+    .then(() => alert("Room code copied!"))
+    .catch(() => alert("Copy failed — please select and copy manually"));
+}
+
+function copyEndCode() {
+  const code = document.getElementById("endCode").textContent;
+  copyToClipboard(code)
+    .then(() => alert("End code copied!"))
+    .catch(() => alert("Copy failed — please select and copy manually"));
+}
+
+window.addEventListener("load", () => {
+  const params = new URLSearchParams(window.location.search);
+  const startParam = params.get("start");
+  const endParam = params.get("end");
+
+  if (startParam && !isNaN(startParam)) {
+    currentRoomCode = startParam;
+    startTime = parseInt(startParam, 10);
+    document.getElementById("roomCode").textContent = startParam;
+    document.getElementById("roomDisplay").style.display = "block";
+    document.getElementById("controls").style.display = "none";
+
+    if (endParam && !isNaN(endParam)) {
+      endTime = parseInt(endParam, 10);
+      const finalAmount = getFinalAmount();
+      document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
+      document.getElementById("paymentButtons").style.display = "block";
+      updateDisplay();
+    } else {
+      document.getElementById("joinEndControls").style.display = "block";
+      startLoop();
+      startBubbles();
+      retryCount = 0;
+      attemptConnect(startParam);
+    }
+  }
+});
+</script>
+</body>
+</html>
