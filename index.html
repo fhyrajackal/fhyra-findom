@@ -8,7 +8,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#120306">
 <title>Worship the true Goddess</title>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; margin: 0; }
@@ -163,7 +166,6 @@
   button.pay-btn:active { background: #005ea6; }
   button.throne-btn { background: #7c3aed; width: min(100%, 220px); }
   button.throne-btn:active { background: #6d28d9; }
-  button.retry-btn { background: #4a5568; width: min(100%, 220px); }
   input {
     background: rgba(25, 6, 10, 0.85);
     color: white;
@@ -238,7 +240,6 @@
     padding-left: 1.1rem;
     padding-right: 1.1rem;
   }
-  #retryContainer { display: none; margin-top: 0.8rem; }
 </style>
 </head>
 <body>
@@ -274,25 +275,12 @@
   </div>
 
   <div class="end-section" id="endSection" style="display:none;">
-    Session Ended<br>
-    End Code:<br>
-    <span id="endCode"></span><br>
-    <button onclick="copyEndCode()">Copy End Code</button>
-    <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Share this end code with the other person.</p>
+    Session Ended
   </div>
 
   <div class="payment-buttons" id="paymentButtons">
     <a id="paypalLink" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener"><button class="pay-btn">Pay with PayPal</button></a>
     <a href="https://throne.com/fhyrajackal" target="_blank" rel="noopener"><button class="throne-btn">Pay with Throne</button></a>
-  </div>
-
-  <div class="controls" id="joinEndControls" style="display:none;">
-    <input type="text" id="endInput" placeholder="Enter end code" inputmode="numeric" autocomplete="off" />
-    <button onclick="applyEndCode()">Apply End Code</button>
-  </div>
-
-  <div id="retryContainer">
-    <button class="retry-btn" onclick="retryConnection()">Retry Connection</button>
   </div>
 
   <div id="chatBox">
@@ -304,6 +292,21 @@
   </div>
 
 <script>
+// ====== PASTE YOUR FIREBASE CONFIG HERE ======
+const firebaseConfig = {
+  apiKey: "AIzaSyAd6FDdxOKZveL4xN0TxuuVrdLG-ePtP30",
+  authDomain: "fhyra-findom.firebaseapp.com",
+  projectId: "fhyra-findom",
+  storageBucket: "fhyra-findom.firebasestorage.app",
+  messagingSenderId: "311734498431",
+  appId: "1:311734498431:web:990625516cfb4ab985fb4a",
+  measurementId: "G-WFDNCH294B"
+};
+// =============================================
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
 let startTime = null;
 let endTime = null;
 let animationId = null;
@@ -311,49 +314,15 @@ let lastFrame = 0;
 let isInitiator = false;
 let bubbleInterval = null;
 let bubbleStartTimeout = null;
-
-let peer = null;
-let conn = null;
 let currentRoomCode = null;
-let retryCount = 0;
-const MAX_RETRIES = 5;
+let messagesRef = null;
+let roomRef = null;
+let myName = null;
 
 const RATE_PER_MINUTE = 3;
 
-const peerConfig = {
-  config: {
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" },
-      { urls: "stun:stun2.l.google.com:19302" },
-      { urls: "stun:stun3.l.google.com:19302" },
-      { urls: "stun:stun4.l.google.com:19302" },
-      {
-        urls: "turn:openrelay.metered.ca:80",
-        username: "openrelayproject",
-        credential: "openrelayproject"
-      },
-      {
-        urls: "turn:openrelay.metered.ca:443",
-        username: "openrelayproject",
-        credential: "openrelayproject"
-      },
-      {
-        urls: "turn:openrelay.metered.ca:443?transport=tcp",
-        username: "openrelayproject",
-        credential: "openrelayproject"
-      }
-    ]
-  },
-  debug: 2
-};
-
 function setStatus(msg) {
   document.getElementById("status").textContent = msg || "";
-}
-
-function showRetry(show) {
-  document.getElementById("retryContainer").style.display = show ? "block" : "none";
 }
 
 function formatTime(ms) {
@@ -395,7 +364,7 @@ function loop(timestamp) {
 function startLoop() {
   if (animationId) cancelAnimationFrame(animationId);
   lastFrame = 0;
-  if (!endTime) animationId = requestAnimationFrame(loop);
+  if (!endTime && startTime) animationId = requestAnimationFrame(loop);
   updateDisplay();
 }
 
@@ -420,6 +389,7 @@ function spawnBubble() {
 }
 
 function startBubbles() {
+  if (bubbleStartTimeout) return;
   bubbleStartTimeout = setTimeout(() => {
     spawnBubble();
     bubbleInterval = setInterval(() => {
@@ -446,81 +416,63 @@ function addMessage(text, isSelf) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-function setupConnection(connection) {
-  conn = connection;
-  conn.on("open", () => {
-    document.getElementById("chatBox").style.display = "block";
-    addMessage("Connected! You can chat now.", false);
-    setStatus("Connected");
-    showRetry(false);
-    retryCount = 0;
+function startChat(roomCode) {
+  currentRoomCode = roomCode;
+  myName = isInitiator ? "Initiator" : "Joiner";
+  roomRef = db.ref("rooms/" + roomCode);
+  messagesRef = roomRef.child("messages");
+
+  document.getElementById("messages").innerHTML = "";
+  messagesRef.orderByChild("timestamp").on("child_added", (snapshot) => {
+    const msg = snapshot.val();
+    const isSelf = msg.sender === myName;
+    addMessage(msg.text, isSelf);
   });
-  conn.on("data", (data) => addMessage(data, false));
-  conn.on("close", () => {
-    addMessage("Connection closed.", false);
-    setStatus("Connection closed");
-    showRetry(true);
+
+  document.getElementById("chatBox").style.display = "block";
+
+  // Listen for startTime (set by joiner)
+  roomRef.child("startTime").on("value", (snap) => {
+    const val = snap.val();
+    if (val && !startTime) {
+      startTime = val;
+      setStatus("Session started");
+      startLoop();
+      startBubbles();
+    }
   });
-  conn.on("error", (err) => {
-    console.error("Connection error:", err);
-    setStatus("Connection error: " + (err.type || err.message || "unknown"));
-    showRetry(true);
-  });
-}
 
-function attemptConnect(code, isRetry = false) {
-  if (peer) {
-    try { peer.destroy(); } catch (e) {}
-    peer = null;
-  }
-  conn = null;
+  // Listen for endTime (set by joiner)
+  roomRef.child("endTime").on("value", (snap) => {
+    const val = snap.val();
+    if (val && !endTime) {
+      endTime = val;
+      if (animationId) cancelAnimationFrame(animationId);
+      updateDisplay();
+      stopBubbles();
+      setStatus("Session ended");
 
-  setStatus(isRetry ? `Retrying (${retryCount}/${MAX_RETRIES})…` : "Connecting…");
-  showRetry(false);
-
-  peer = new Peer(null, peerConfig);
-
-  peer.on("open", () => {
-    console.log("Joiner peer open, connecting to", code);
-    const connection = peer.connect(code, { reliable: true });
-    setupConnection(connection);
-
-    setTimeout(() => {
-      if (!conn || !conn.open) {
-        handleConnectFailure();
+      if (isInitiator) {
+        const finalAmount = getFinalAmount();
+        document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
+        document.getElementById("paymentButtons").style.display = "block";
+        document.getElementById("endSection").style.display = "block";
       }
-    }, 12000);
+    }
   });
-
-  peer.on("error", (err) => {
-    console.error("Peer error:", err);
-    handleConnectFailure();
-  });
-}
-
-function handleConnectFailure() {
-  retryCount++;
-  if (retryCount <= MAX_RETRIES) {
-    setStatus(`Failed — auto-retrying (${retryCount}/${MAX_RETRIES})…`);
-    setTimeout(() => attemptConnect(currentRoomCode, true), 2500);
-  } else {
-    setStatus("Could not connect. Try switching networks or use Retry.");
-    showRetry(true);
-  }
-}
-
-function retryConnection() {
-  if (!currentRoomCode) return;
-  retryCount = 0;
-  attemptConnect(currentRoomCode);
 }
 
 function sendMessage() {
   const input = document.getElementById("chatInput");
   const text = input.value.trim();
-  if (!text || !conn || !conn.open) return;
-  conn.send(text);
-  addMessage(text, true);
+  if (!text || !messagesRef) return;
+
+  messagesRef.push({
+    text: text,
+    sender: myName,
+    timestamp: Date.now()
+  });
+
   input.value = "";
 }
 
@@ -530,29 +482,13 @@ document.getElementById("chatInput").addEventListener("keypress", (e) => {
 
 function initiateSession() {
   isInitiator = true;
-  startTime = Date.now();
-  const code = startTime.toString();
-  currentRoomCode = code;
+  const code = Date.now().toString();
   document.getElementById("roomCode").textContent = code;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
-  document.getElementById("endButtonContainer").innerHTML =
-    '<button class="end-btn" onclick="endSession()">End Session</button>';
 
-  setStatus("Starting…");
-  peer = new Peer(code, peerConfig);
-  peer.on("open", (id) => {
-    console.log("Initiator peer open:", id);
-    setStatus("Waiting for the other person…");
-  });
-  peer.on("connection", setupConnection);
-  peer.on("error", (err) => {
-    console.error(err);
-    setStatus("Peer error: " + (err.type || "failed to start"));
-  });
-
-  startLoop();
-  startBubbles();
+  setStatus("Waiting for Fhyra to ruin you…");
+  startChat(code);
 
   const url = new URL(window.location);
   url.searchParams.set("start", code);
@@ -566,59 +502,39 @@ function joinSession() {
     alert("Please enter a valid room code");
     return;
   }
-  currentRoomCode = code;
-  startTime = parseInt(code, 10);
   document.getElementById("roomCode").textContent = code;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
-  document.getElementById("joinEndControls").style.display = "block";
 
-  retryCount = 0;
-  attemptConnect(code);
+  // Joiner sets the real start time
+  const room = db.ref("rooms/" + code);
+  room.child("startTime").transaction((current) => {
+    return current || Date.now();
+  }).then(() => {
+    setStatus("Joined — session started");
+    startChat(code);
 
-  startLoop();
-  startBubbles();
+    // Only joiner gets the End button
+    document.getElementById("endButtonContainer").innerHTML =
+      '<button class="end-btn" onclick="endSession()">End Session</button>';
+  });
 }
 
 function endSession() {
-  if (!isInitiator || endTime) return;
-  endTime = Date.now();
-  if (animationId) cancelAnimationFrame(animationId);
-  updateDisplay();
-  stopBubbles();
+  if (isInitiator || endTime || !roomRef) return;
 
-  if (conn && conn.open) conn.send("[Session ended by initiator]");
+  const now = Date.now();
+  roomRef.child("endTime").set(now);
 
-  const endCode = endTime.toString();
-  document.getElementById("endCode").textContent = endCode;
-  document.getElementById("endSection").style.display = "block";
-  document.getElementById("endButtonContainer").innerHTML = "";
-  setStatus("Session ended");
-  showRetry(false);
-
-  const url = new URL(window.location);
-  url.searchParams.set("end", endCode);
-  window.history.replaceState({}, "", url);
-}
-
-function applyEndCode() {
-  const code = document.getElementById("endInput").value.trim();
-  if (!code || isNaN(code)) {
-    alert("Please enter a valid end code");
-    return;
+  if (messagesRef) {
+    messagesRef.push({
+      text: "[Session ended by joiner]",
+      sender: "System",
+      timestamp: now
+    });
   }
-  endTime = parseInt(code, 10);
-  if (animationId) cancelAnimationFrame(animationId);
-  updateDisplay();
-  stopBubbles();
 
-  const finalAmount = getFinalAmount();
-  document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
-
-  document.getElementById("joinEndControls").style.display = "none";
-  document.getElementById("paymentButtons").style.display = "block";
-  setStatus("");
-  showRetry(false);
+  document.getElementById("endButtonContainer").innerHTML = "";
 }
 
 function copyToClipboard(text) {
@@ -649,38 +565,18 @@ function copyCode() {
     .catch(() => alert("Copy failed — please select and copy manually"));
 }
 
-function copyEndCode() {
-  const code = document.getElementById("endCode").textContent;
-  copyToClipboard(code)
-    .then(() => alert("End code copied!"))
-    .catch(() => alert("Copy failed — please select and copy manually"));
-}
-
 window.addEventListener("load", () => {
   const params = new URLSearchParams(window.location.search);
   const startParam = params.get("start");
-  const endParam = params.get("end");
 
   if (startParam && !isNaN(startParam)) {
-    currentRoomCode = startParam;
-    startTime = parseInt(startParam, 10);
+    // Treat URL as initiator view for simplicity, or you can refine later
     document.getElementById("roomCode").textContent = startParam;
     document.getElementById("roomDisplay").style.display = "block";
     document.getElementById("controls").style.display = "none";
-
-    if (endParam && !isNaN(endParam)) {
-      endTime = parseInt(endParam, 10);
-      const finalAmount = getFinalAmount();
-      document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
-      document.getElementById("paymentButtons").style.display = "block";
-      updateDisplay();
-    } else {
-      document.getElementById("joinEndControls").style.display = "block";
-      startLoop();
-      startBubbles();
-      retryCount = 0;
-      attemptConnect(startParam);
-    }
+    isInitiator = true;
+    setStatus("Waiting for joiner…");
+    startChat(startParam);
   }
 });
 </script>
