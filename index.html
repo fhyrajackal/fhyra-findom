@@ -316,7 +316,7 @@ let peer = null;
 let conn = null;
 let currentRoomCode = null;
 let retryCount = 0;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 
 const RATE_PER_MINUTE = 3;
 
@@ -327,9 +327,25 @@ const peerConfig = {
       { urls: "stun:stun1.l.google.com:19302" },
       { urls: "stun:stun2.l.google.com:19302" },
       { urls: "stun:stun3.l.google.com:19302" },
-      { urls: "stun:stun4.l.google.com:19302" }
+      { urls: "stun:stun4.l.google.com:19302" },
+      {
+        urls: "turn:openrelay.metered.ca:80",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      },
+      {
+        urls: "turn:openrelay.metered.ca:443?transport=tcp",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      }
     ]
-  }
+  },
+  debug: 2
 };
 
 function setStatus(msg) {
@@ -446,8 +462,8 @@ function setupConnection(connection) {
     showRetry(true);
   });
   conn.on("error", (err) => {
-    console.error(err);
-    setStatus("Connection error");
+    console.error("Connection error:", err);
+    setStatus("Connection error: " + (err.type || err.message || "unknown"));
     showRetry(true);
   });
 }
@@ -459,25 +475,25 @@ function attemptConnect(code, isRetry = false) {
   }
   conn = null;
 
-  setStatus(isRetry ? `Retrying connection (${retryCount}/${MAX_RETRIES})…` : "Connecting…");
+  setStatus(isRetry ? `Retrying (${retryCount}/${MAX_RETRIES})…` : "Connecting…");
   showRetry(false);
 
   peer = new Peer(null, peerConfig);
 
   peer.on("open", () => {
+    console.log("Joiner peer open, connecting to", code);
     const connection = peer.connect(code, { reliable: true });
     setupConnection(connection);
 
-    // Timeout fallback if no open event
     setTimeout(() => {
       if (!conn || !conn.open) {
         handleConnectFailure();
       }
-    }, 8000);
+    }, 12000);
   });
 
   peer.on("error", (err) => {
-    console.error(err);
+    console.error("Peer error:", err);
     handleConnectFailure();
   });
 }
@@ -485,10 +501,10 @@ function attemptConnect(code, isRetry = false) {
 function handleConnectFailure() {
   retryCount++;
   if (retryCount <= MAX_RETRIES) {
-    setStatus(`Connection failed — auto-retrying (${retryCount}/${MAX_RETRIES})…`);
-    setTimeout(() => attemptConnect(currentRoomCode, true), 2000);
+    setStatus(`Failed — auto-retrying (${retryCount}/${MAX_RETRIES})…`);
+    setTimeout(() => attemptConnect(currentRoomCode, true), 2500);
   } else {
-    setStatus("Could not connect. Check the code and try again.");
+    setStatus("Could not connect. Try switching networks or use Retry.");
     showRetry(true);
   }
 }
@@ -525,7 +541,10 @@ function initiateSession() {
 
   setStatus("Starting…");
   peer = new Peer(code, peerConfig);
-  peer.on("open", () => setStatus("Waiting for the other person…"));
+  peer.on("open", (id) => {
+    console.log("Initiator peer open:", id);
+    setStatus("Waiting for the other person…");
+  });
   peer.on("connection", setupConnection);
   peer.on("error", (err) => {
     console.error(err);
