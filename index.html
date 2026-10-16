@@ -443,25 +443,25 @@ function startChat(roomCode) {
   document.getElementById("chatBox").style.display = "block";
 
   // Reliable startTime listener
-roomRef.child("startTime").on("value", (snap) => {
-  const val = snap.val();
-  console.log("startTime update:", val, "current local startTime:", startTime);
+  roomRef.child("startTime").on("value", (snap) => {
+    const val = snap.val();
+    console.log("startTime update:", val, "current local startTime:", startTime);
 
-  if (val && !startTime) {
-    console.log("→ Entering start block, setting startTime and calling startLoop");
-    startTime = Number(val);
-    setStatus("Session started");
-    try {
-      startLoop();
-      startBubbles();
-      console.log("→ startLoop and startBubbles called successfully");
-    } catch (e) {
-      console.error("Error in startLoop/startBubbles:", e);
+    if (val && !startTime) {
+      console.log("→ Entering start block, setting startTime and calling startLoop");
+      startTime = Number(val);
+      setStatus("Session started");
+      try {
+        startLoop();
+        startBubbles();
+        console.log("→ startLoop and startBubbles called successfully");
+      } catch (e) {
+        console.error("Error in startLoop/startBubbles:", e);
+      }
+    } else {
+      console.log("→ Skipped start block. val=", val, "startTime=", startTime);
     }
-  } else {
-    console.log("→ Skipped start block. val=", val, "startTime=", startTime);
-  }
-});
+  });
 
   // Reliable endTime listener
   roomRef.child("endTime").on("value", (snap) => {
