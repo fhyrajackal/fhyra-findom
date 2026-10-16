@@ -356,6 +356,7 @@ function getFinalAmount() {
 }
 
 function updateDisplay() {
+  console.log("updateDisplay called, startTime =", startTime, "elapsed =", getElapsedMs());
   if (!startTime) return;
   const elapsedMs = getElapsedMs();
   const amount = (elapsedMs / 60000) * RATE_PER_MINUTE;
@@ -364,6 +365,7 @@ function updateDisplay() {
 }
 
 function loop(timestamp) {
+  console.log("loop tick, startTime =", startTime);
   if (!startTime || endTime) return;
   if (timestamp - lastFrame >= 1000 / 30) {
     updateDisplay();
