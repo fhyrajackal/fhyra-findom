@@ -315,6 +315,22 @@ if (!firebase.apps.length) {
 const db = firebase.database();
 console.log("Firebase initialized:", firebase.app().options.databaseURL);
 
+// ===== SERVER CLOCK SYNCHRONIZATION =====
+let serverTimeOffset = 0;
+
+db.ref(".info/serverTimeOffset").on("value", (snapshot) => {
+  serverTimeOffset = Number(snapshot.val()) || 0;
+
+  console.log("[SERVER CLOCK]", {
+    offsetMs: serverTimeOffset,
+    correctedTime: new Date(Date.now() + serverTimeOffset).toISOString()
+  });
+});
+
+function getServerNow() {
+  return Date.now() + serverTimeOffset;
+}
+
 let startTime = null;
 let endTime = null;
 let animationId = null;
@@ -343,7 +359,7 @@ function formatTime(ms) {
 
 function getElapsedMs() {
   if (!startTime) return 0;
-  const now = endTime ? endTime : Date.now();
+  const now = endTime ? Number(endTime) : getServerNow();
   return Math.max(0, now - startTime);
 }
 
@@ -355,7 +371,7 @@ function getFinalAmount() {
 function updateDisplay() {
   if (!startTime) return;
 
-  const now = Date.now();
+  const now = getServerNow();
   const elapsedMs = Math.max(0, now - Number(startTime));
 
   console.log("[CLOCK CHECK]", {
@@ -576,7 +592,7 @@ function joinRoomByCode(code) {
   const room = db.ref("rooms/" + code);
 
   room.child("startTime").transaction(
-    (current) => current || Date.now(),
+    (current) => current || getServerNow(),
     (error, committed, snapshot) => {
       if (error) {
         console.error("Failed to join room:", error);
@@ -618,7 +634,7 @@ function joinSession() {
 function endSession() {
   if (isInitiator || endTime || !roomRef) return;
 
-  const now = Date.now();
+  const now = getServerNow();
   roomRef.child("endTime").set(now);
 
   if (messagesRef) {
