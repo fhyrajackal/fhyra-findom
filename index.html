@@ -307,16 +307,13 @@ const firebaseConfig = {
 // =============================================
 
  console.log("Config object:", firebaseConfig);
-try {
+
+if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
-  console.log("Firebase initialized successfully");
-  console.log("Database URL from app:", firebase.app().options.databaseURL);
-} catch (e) {
-  console.error("Firebase init failed:", e);
 }
 
-firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+console.log("Firebase initialized:", firebase.app().options.databaseURL);
 
 let startTime = null;
 let endTime = null;
@@ -356,34 +353,49 @@ function getFinalAmount() {
 }
 
 function updateDisplay() {
-  console.log("updateDisplay → amount should be", ((getElapsedMs() / 60000) * RATE_PER_MINUTE).toFixed(2));
   if (!startTime) return;
+
   const elapsedMs = getElapsedMs();
   const amount = (elapsedMs / 60000) * RATE_PER_MINUTE;
-  document.getElementById("amount").textContent = "$" + amount.toFixed(2);
-  document.getElementById("time").textContent = formatTime(elapsedMs);
+
+  document.getElementById("amount").textContent =
+    "$" + amount.toFixed(2);
+
+  document.getElementById("time").textContent =
+    formatTime(elapsedMs);
 }
 
 let timerInterval = null;
 
 function startLoop() {
-  console.log("startLoop called, startTime =", startTime);
-  if (timerInterval) clearInterval(timerInterval);
-  if (!startTime || endTime) return;
+  // Do not start without a valid session timestamp.
+  if (!Number.isFinite(Number(startTime)) || Number(startTime) <= 0) {
+    console.warn("Timer cannot start: invalid startTime", startTime);
+    return;
+  }
 
-  // Immediate update
+  // Prevent duplicate intervals.
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  // Update immediately, then keep both counters moving.
   updateDisplay();
 
-  // Then update every 100ms (easy to see)
+  if (endTime) return;
+
   timerInterval = setInterval(() => {
     if (!startTime || endTime) {
       clearInterval(timerInterval);
+      timerInterval = null;
       return;
     }
-    updateDisplay();
-  }, 100);
 
-  console.log("Interval timer started");
+    updateDisplay();
+  }, 250);
+
+  console.log("Timer started with timestamp:", startTime);
 }
 
 function loop() {}
@@ -453,25 +465,29 @@ function startChat(roomCode) {
 
   // Reliable startTime listener
   roomRef.child("startTime").on("value", (snap) => {
-    const val = snap.val();
-    console.log("startTime update:", val, "current local startTime:", startTime);
+  const val = Number(snap.val());
 
-    if (val && !startTime) {
-      console.log("→ Entering start block, setting startTime and calling startLoop");
-      startTime = Number(val);
-      setStatus("Session started");
-      try {
-        startLoop();
-        startBubbles();
-        console.log("→ startLoop and startBubbles called successfully");
-      } catch (e) {
-        console.error("Error in startLoop/startBubbles:", e);
-      }
-    } else {
-      console.log("→ Skipped start block. val=", val, "startTime=", startTime);
-    }
-  });
+  console.log("Firebase startTime received:", val);
 
+  if (!Number.isFinite(val) || val <= 0) {
+    return;
+  }
+
+  // Always synchronize the local timestamp with Firebase.
+  // Both manual-code and email-link joins use this listener.
+  if (startTime !== val) {
+    startTime = val;
+  }
+
+  if (!endTime) {
+    setStatus("Session started");
+    startLoop();
+    startBubbles();
+  } else {
+    updateDisplay();
+  }
+});
+ 
   // Reliable endTime listener
   roomRef.child("endTime").on("value", (snap) => {
     const val = snap.val();
@@ -549,45 +565,55 @@ function initiateSession() {
   window.history.replaceState({}, "", url);
 }
 
-function joinSession() {
+function joinRoomByCode(code) {
   isInitiator = false;
-  const code = document.getElementById("roomInput").value.trim();
-  if (!code || isNaN(code)) {
-    alert("Please enter a valid room code");
-    return;
-  }
 
-  setStatus("Joining room…");
   document.getElementById("roomCode").textContent = code;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
 
+  setStatus("Joining room…");
+
   const room = db.ref("rooms/" + code);
 
-  // Try to set startTime only if it doesn't exist yet
-  room.child("startTime").transaction((current) => {
-    return current || Date.now();
-  }, (error, committed, snapshot) => {
-    if (error) {
-      console.error("Transaction failed:", error);
-      setStatus("Error joining: " + error.message);
-      alert("Failed to join room. Check console for details.\n\nCommon causes:\n- Firebase rules not published\n- Wrong databaseURL in config\n- No internet");
-      return;
+  room.child("startTime").transaction(
+    (current) => current || Date.now(),
+    (error, committed, snapshot) => {
+      if (error) {
+        console.error("Failed to join room:", error);
+        setStatus("Error joining: " + error.message);
+        return;
+      }
+
+      if (!snapshot.exists() || !snapshot.val()) {
+        setStatus("Could not obtain session start time.");
+        return;
+      }
+
+      setStatus(
+        committed
+          ? "Joined — session started"
+          : "Joined existing session"
+      );
+
+      // Both join methods now initialize the same listeners.
+      startChat(code);
+
+      document.getElementById("endButtonContainer").innerHTML =
+        '<button class="end-btn" onclick="endSession()">End Session</button>';
     }
+  );
+}
 
-    if (!committed) {
-      setStatus("Room already started");
-    } else {
-      setStatus("Joined — session started");
-    }
+function joinSession() {
+  const code = document.getElementById("roomInput").value.trim();
 
-    // Always start chat + UI even if startTime already existed
-    startChat(code);
+  if (!/^\d+$/.test(code)) {
+    alert("Please enter a valid room code");
+    return;
+  }
 
-    // Only the joiner gets the End button
-    document.getElementById("endButtonContainer").innerHTML =
-      '<button class="end-btn" onclick="endSession()">End Session</button>';
-  });
+  joinRoomByCode(code);
 }
 
 function endSession() {
@@ -639,33 +665,8 @@ window.addEventListener("load", () => {
   const params = new URLSearchParams(window.location.search);
   const startParam = params.get("start");
 
-  if (startParam && !isNaN(startParam)) {
-    // Opening a link with ?start= means you are the JOINER
-    isInitiator = false;
-    const code = startParam;
-
-    document.getElementById("roomCode").textContent = code;
-    document.getElementById("roomDisplay").style.display = "block";
-    document.getElementById("controls").style.display = "none";
-
-    setStatus("Joining via link…");
-
-    const room = db.ref("rooms/" + code);
-    room.child("startTime").transaction((current) => {
-      return current || Date.now();
-    }, (error, committed) => {
-      if (error) {
-        console.error(error);
-        setStatus("Error joining: " + error.message);
-        return;
-      }
-      setStatus(committed ? "Joined — session started" : "Joined existing session");
-      startChat(code);
-
-      // Joiner gets the End button
-      document.getElementById("endButtonContainer").innerHTML =
-        '<button class="end-btn" onclick="endSession()">End Session</button>';
-    });
+  if (startParam && /^\d+$/.test(startParam)) {
+    joinRoomByCode(startParam);
   }
 });
 </script>
