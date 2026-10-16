@@ -356,7 +356,7 @@ function getFinalAmount() {
 }
 
 function updateDisplay() {
-  console.log("updateDisplay called, startTime =", startTime, "elapsed =", getElapsedMs());
+  console.log("updateDisplay → amount should be", ((getElapsedMs() / 60000) * RATE_PER_MINUTE).toFixed(2));
   if (!startTime) return;
   const elapsedMs = getElapsedMs();
   const amount = (elapsedMs / 60000) * RATE_PER_MINUTE;
@@ -364,22 +364,29 @@ function updateDisplay() {
   document.getElementById("time").textContent = formatTime(elapsedMs);
 }
 
-function loop(timestamp) {
-  console.log("loop tick, startTime =", startTime);
-  if (!startTime || endTime) return;
-  if (timestamp - lastFrame >= 1000 / 30) {
-    updateDisplay();
-    lastFrame = timestamp;
-  }
-  animationId = requestAnimationFrame(loop);
-}
+let timerInterval = null;
 
 function startLoop() {
-  if (animationId) cancelAnimationFrame(animationId);
-  lastFrame = 0;
-  if (!endTime && startTime) animationId = requestAnimationFrame(loop);
+  console.log("startLoop called, startTime =", startTime);
+  if (timerInterval) clearInterval(timerInterval);
+  if (!startTime || endTime) return;
+
+  // Immediate update
   updateDisplay();
+
+  // Then update every 100ms (easy to see)
+  timerInterval = setInterval(() => {
+    if (!startTime || endTime) {
+      clearInterval(timerInterval);
+      return;
+    }
+    updateDisplay();
+  }, 100);
+
+  console.log("Interval timer started");
 }
+
+function loop() {}
 
 function spawnBubble() {
   const bubbles = document.getElementById("bubbles");
