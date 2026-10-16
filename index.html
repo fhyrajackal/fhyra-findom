@@ -518,16 +518,16 @@ function initiateSession() {
     join_link: joinLink,
     room_code: code
   }).then(() => {
-    setStatus("Join email sent — waiting for you to open it");
+    setStatus("Join email sent — waiting for Fhyra to ruin you~");
   }).catch((err) => {
     console.error("Email failed:", err);
     setStatus("Email failed — share the room code manually");
   });
 
   // Still update the URL for convenience
-  const url = new URL(window.location);
-  url.searchParams.set("start", code);
-  window.history.replaceState({}, "", url);
+  // const url = new URL(window.location);
+  // url.searchParams.set("start", code);
+  // window.history.replaceState({}, "", url);
 }
 
 function joinSession() {
@@ -621,13 +621,32 @@ window.addEventListener("load", () => {
   const startParam = params.get("start");
 
   if (startParam && !isNaN(startParam)) {
-    // Treat URL as initiator view for simplicity, or you can refine later
-    document.getElementById("roomCode").textContent = startParam;
+    // Opening a link with ?start= means you are the JOINER
+    isInitiator = false;
+    const code = startParam;
+
+    document.getElementById("roomCode").textContent = code;
     document.getElementById("roomDisplay").style.display = "block";
     document.getElementById("controls").style.display = "none";
-    isInitiator = true;
-    setStatus("Waiting for joiner…");
-    startChat(startParam);
+
+    setStatus("Joining via link…");
+
+    const room = db.ref("rooms/" + code);
+    room.child("startTime").transaction((current) => {
+      return current || Date.now();
+    }, (error, committed) => {
+      if (error) {
+        console.error(error);
+        setStatus("Error joining: " + error.message);
+        return;
+      }
+      setStatus(committed ? "Joined — session started" : "Joined existing session");
+      startChat(code);
+
+      // Joiner gets the End button
+      document.getElementById("endButtonContainer").innerHTML =
+        '<button class="end-btn" onclick="endSession()">End Session</button>';
+    });
   }
 });
 </script>
