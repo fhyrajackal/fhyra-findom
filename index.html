@@ -353,49 +353,54 @@ function getFinalAmount() {
 }
 
 function updateDisplay() {
-  if (!startTime) return;
+  const amountEl = document.getElementById("amount");
+  const timeEl = document.getElementById("time");
 
-  const elapsedMs = getElapsedMs();
+  if (!startTime) {
+    console.warn("[COUNTERS] No startTime available");
+    return;
+  }
+
+  const now = endTime || Date.now();
+  const elapsedMs = Math.max(0, now - Number(startTime));
   const amount = (elapsedMs / 60000) * RATE_PER_MINUTE;
 
-  document.getElementById("amount").textContent =
-    "$" + amount.toFixed(2);
+  amountEl.textContent = "$" + amount.toFixed(2);
+  timeEl.textContent = formatTime(elapsedMs);
 
-  document.getElementById("time").textContent =
-    formatTime(elapsedMs);
+  console.log("[COUNTERS]", {
+    isInitiator,
+    startTime,
+    elapsedMs,
+    amount: amountEl.textContent,
+    time: timeEl.textContent
+  });
 }
 
 let timerInterval = null;
 
 function startLoop() {
-  // Do not start without a valid session timestamp.
-  if (!Number.isFinite(Number(startTime)) || Number(startTime) <= 0) {
-    console.warn("Timer cannot start: invalid startTime", startTime);
-    return;
-  }
+  console.log("[TIMER] startLoop called", {
+    isInitiator,
+    startTime,
+    endTime
+  });
 
-  // Prevent duplicate intervals.
   if (timerInterval) {
     clearInterval(timerInterval);
     timerInterval = null;
   }
 
-  // Update immediately, then keep both counters moving.
+  if (!startTime || endTime) {
+    console.warn("[TIMER] Not started", { startTime, endTime });
+    return;
+  }
+
   updateDisplay();
 
-  if (endTime) return;
+  timerInterval = setInterval(updateDisplay, 1000);
 
-  timerInterval = setInterval(() => {
-    if (!startTime || endTime) {
-      clearInterval(timerInterval);
-      timerInterval = null;
-      return;
-    }
-
-    updateDisplay();
-  }, 250);
-
-  console.log("Timer started with timestamp:", startTime);
+  console.log("[TIMER] Interval running");
 }
 
 function loop() {}
