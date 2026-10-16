@@ -442,22 +442,23 @@ function startChat(roomCode) {
 
   document.getElementById("chatBox").style.display = "block";
 
-  // Listen for startTime (set by joiner)
+  // Reliable startTime listener
   roomRef.child("startTime").on("value", (snap) => {
     const val = snap.val();
+    console.log("startTime update:", val, "current local startTime:", startTime);
     if (val && !startTime) {
-      startTime = val;
+      startTime = Number(val);
       setStatus("Session started");
       startLoop();
       startBubbles();
     }
   });
 
-  // Listen for endTime (set by joiner)
+  // Reliable endTime listener
   roomRef.child("endTime").on("value", (snap) => {
     const val = snap.val();
     if (val && !endTime) {
-      endTime = val;
+      endTime = Number(val);
       if (animationId) cancelAnimationFrame(animationId);
       updateDisplay();
       stopBubbles();
