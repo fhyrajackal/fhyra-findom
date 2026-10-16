@@ -276,7 +276,8 @@
   </div>
 
   <div class="end-section" id="endSection" style="display:none;">
-    Session Ended
+    <div>Session Ended</div>
+    <div id="resetSessionContainer"></div>
   </div>
 
   <div class="payment-buttons" id="paymentButtons">
@@ -338,6 +339,7 @@ let roomRef = null;
 let myName = null;
 let startTimeRef = null;
 let endTimeRef = null;
+let resetRef = null;
 let messagesQuery = null;
 const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
 
@@ -409,13 +411,77 @@ function showEndedState() {
   stopBubbles();
   setStatus("Session ended");
 
+  // The joiner controls resetting the shared session. The reset event is
+  // written to Firebase so both participants return to the main menu together.
+  document.getElementById("endSection").style.display = "block";
+  document.getElementById("resetSessionContainer").innerHTML = isInitiator
+    ? ""
+    : '<button type="button" onclick="resetSessionForBoth()">Reset Session for Both</button>';
   if (isInitiator) {
     const finalAmount = getFinalAmount();
     document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
     document.getElementById("paymentButtons").style.display = "block";
-    document.getElementById("endSection").style.display = "block";
+  } else {
+    document.getElementById("paymentButtons").style.display = "none";
   }
-  if (!isInitiator) document.getElementById("endButtonContainer").innerHTML = "";
+  document.getElementById("endButtonContainer").innerHTML = "";
+}
+
+function returnToMainMenu() {
+  // Detach all listeners from the finished room so old Firebase events cannot
+  // put the UI back on the ended/payment screen after returning to the menu.
+  if (messagesQuery) messagesQuery.off();
+  if (messagesRef) messagesRef.off();
+  if (startTimeRef) startTimeRef.off();
+  if (endTimeRef) endTimeRef.off();
+  if (resetRef) resetRef.off();
+  if (roomRef) roomRef.off();
+
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+  stopBubbles();
+
+  try { localStorage.removeItem(ACTIVE_SESSION_KEY); } catch (error) {
+    console.warn("Could not clear saved session:", error);
+  }
+
+  // Remove ?start=ROOM_CODE so refreshing cannot automatically rejoin the old room.
+  if (window.location.search) {
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }
+
+  startTime = null;
+  endTime = null;
+  currentRoomCode = null;
+  messagesRef = null;
+  roomRef = null;
+  myName = null;
+  startTimeRef = null;
+  endTimeRef = null;
+  resetRef = null;
+  messagesQuery = null;
+  isInitiator = false;
+
+  document.getElementById("amount").textContent = "$0.00";
+  document.getElementById("time").textContent = "00:00:00";
+  document.getElementById("roomCode").textContent = "";
+  document.getElementById("roomInput").value = "";
+  document.getElementById("chatInput").value = "";
+  document.getElementById("messages").innerHTML = "";
+  document.getElementById("endButtonContainer").innerHTML = "";
+  document.getElementById("roomDisplay").style.display = "none";
+  document.getElementById("chatBox").style.display = "none";
+  document.getElementById("paymentButtons").style.display = "none";
+  document.getElementById("endSection").style.display = "none";
+  document.getElementById("controls").style.display = "block";
+  setStatus("");
 }
 
 let timerInterval = null;
@@ -516,6 +582,7 @@ function startChat(roomCode) {
   messagesRef = roomRef.child("messages");
   startTimeRef = roomRef.child("startTime");
   endTimeRef = roomRef.child("endTime");
+  resetRef = roomRef.child("resetAt");
   messagesQuery = messagesRef.orderByChild("timestamp");
 
   document.getElementById("roomCode").textContent = currentRoomCode;
@@ -551,6 +618,13 @@ function startChat(roomCode) {
     if (Number.isFinite(val) && val > 0) {
       endTime = val;
       showEndedState();
+    }
+  });
+
+  resetRef.on("value", (snap) => {
+    const val = Number(snap.val());
+    if (Number.isFinite(val) && val > 0) {
+      returnToMainMenu();
     }
   });
 }
@@ -668,6 +742,19 @@ function joinSession() {
   }
 
   joinRoomByCode(code);
+}
+
+function resetSessionForBoth() {
+  // Only the joiner can reset the room for both participants.
+  if (isInitiator || !endTime || !roomRef || !resetRef) return;
+  setStatus("Resetting session for both participants…");
+  resetRef.set(getServerNow()).then(() => {
+    // The initiator's reset listener will return their device to the main menu.
+    returnToMainMenu();
+  }).catch((error) => {
+    console.error("Could not reset session:", error);
+    setStatus("Could not reset session. Check your connection and try again.");
+  });
 }
 
 function endSession() {
