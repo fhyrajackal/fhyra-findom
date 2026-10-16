@@ -371,20 +371,24 @@ function getFinalAmount() {
 function updateDisplay() {
   if (!startTime) return;
 
-  const now = getServerNow();
+  // Freeze time at endTime when the session has ended.
+  const now = endTime ? Number(endTime) : getServerNow();
   const elapsedMs = Math.max(0, now - Number(startTime));
 
-  console.log("[CLOCK CHECK]", {
-    now,
+  const amount = "$" + ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
+  const time = formatTime(elapsedMs);
+
+  document.getElementById("amount").textContent = amount;
+  document.getElementById("time").textContent = time;
+
+  console.log("[COUNTERS]", {
+    isInitiator,
     startTime,
+    endTime,
     elapsedMs,
-    dateNowWorks: now > Number(startTime)
+    amount,
+    time
   });
-
-  document.getElementById("amount").textContent =
-    "$" + ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
-
-  document.getElementById("time").textContent = formatTime(elapsedMs);
 }
 
 let timerInterval = null;
@@ -506,16 +510,30 @@ function startChat(roomCode) {
   // Reliable endTime listener
   roomRef.child("endTime").on("value", (snap) => {
     const val = snap.val();
+
     if (val && !endTime) {
       endTime = Number(val);
+
+      // Stop the timer interval.
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+
       if (animationId) cancelAnimationFrame(animationId);
+
+      // Freeze counters at the final time.
       updateDisplay();
+
       stopBubbles();
       setStatus("Session ended");
 
       if (isInitiator) {
         const finalAmount = getFinalAmount();
-        document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
+
+        document.getElementById("paypalLink").href =
+          `https://paypal.me/fhyrapaypal/${finalAmount}`;
+
         document.getElementById("paymentButtons").style.display = "block";
         document.getElementById("endSection").style.display = "block";
       }
