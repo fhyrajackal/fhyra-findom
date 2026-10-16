@@ -526,9 +526,9 @@ function initiateSession() {
   });
 
   // Still update the URL for convenience
-  // const url = new URL(window.location);
-  // url.searchParams.set("start", code);
-  // window.history.replaceState({}, "", url);
+  const url = new URL(window.location);
+  url.searchParams.set("start", code);
+  window.history.replaceState({}, "", url);
 }
 
 function joinSession() {
