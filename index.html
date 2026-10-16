@@ -353,28 +353,22 @@ function getFinalAmount() {
 }
 
 function updateDisplay() {
-  const amountEl = document.getElementById("amount");
-  const timeEl = document.getElementById("time");
+  if (!startTime) return;
 
-  if (!startTime) {
-    console.warn("[COUNTERS] No startTime available");
-    return;
-  }
-
-  const now = endTime || Date.now();
+  const now = Date.now();
   const elapsedMs = Math.max(0, now - Number(startTime));
-  const amount = (elapsedMs / 60000) * RATE_PER_MINUTE;
 
-  amountEl.textContent = "$" + amount.toFixed(2);
-  timeEl.textContent = formatTime(elapsedMs);
-
-  console.log("[COUNTERS]", {
-    isInitiator,
+  console.log("[CLOCK CHECK]", {
+    now,
     startTime,
     elapsedMs,
-    amount: amountEl.textContent,
-    time: timeEl.textContent
+    dateNowWorks: now > Number(startTime)
   });
+
+  document.getElementById("amount").textContent =
+    "$" + ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
+
+  document.getElementById("time").textContent = formatTime(elapsedMs);
 }
 
 let timerInterval = null;
