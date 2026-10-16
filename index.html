@@ -315,18 +315,12 @@ if (!firebase.apps.length) {
 const db = firebase.database();
 console.log("Firebase initialized:", firebase.app().options.databaseURL);
 
-// ===== SERVER CLOCK SYNCHRONIZATION =====
+// Firebase's server offset keeps sessions aligned even when a phone's clock is wrong.
 let serverTimeOffset = 0;
-
 db.ref(".info/serverTimeOffset").on("value", (snapshot) => {
   serverTimeOffset = Number(snapshot.val()) || 0;
-
-  console.log("[SERVER CLOCK]", {
-    offsetMs: serverTimeOffset,
-    correctedTime: new Date(Date.now() + serverTimeOffset).toISOString()
-  });
+  console.log("[SERVER CLOCK] offset ms:", serverTimeOffset);
 });
-
 function getServerNow() {
   return Date.now() + serverTimeOffset;
 }
@@ -342,6 +336,10 @@ let currentRoomCode = null;
 let messagesRef = null;
 let roomRef = null;
 let myName = null;
+let startTimeRef = null;
+let endTimeRef = null;
+let messagesQuery = null;
+const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
 
 const RATE_PER_MINUTE = 3;
 
@@ -360,7 +358,7 @@ function formatTime(ms) {
 function getElapsedMs() {
   if (!startTime) return 0;
   const now = endTime ? Number(endTime) : getServerNow();
-  return Math.max(0, now - startTime);
+  return Math.max(0, now - Number(startTime));
 }
 
 function getFinalAmount() {
@@ -371,24 +369,53 @@ function getFinalAmount() {
 function updateDisplay() {
   if (!startTime) return;
 
-  // Freeze time at endTime when the session has ended.
+  // Never depend on setInterval having run while the app was backgrounded.
+  // Recalculate from shared timestamps every time the UI is refreshed.
   const now = endTime ? Number(endTime) : getServerNow();
   const elapsedMs = Math.max(0, now - Number(startTime));
 
-  const amount = "$" + ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
-  const time = formatTime(elapsedMs);
+  document.getElementById("amount").textContent =
+    "$" + ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
+  document.getElementById("time").textContent = formatTime(elapsedMs);
+}
 
-  document.getElementById("amount").textContent = amount;
-  document.getElementById("time").textContent = time;
+function saveActiveSession(code, role) {
+  try {
+    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ code: String(code), role }));
+  } catch (error) {
+    console.warn("Could not persist active session on this device:", error);
+  }
+}
 
-  console.log("[COUNTERS]", {
-    isInitiator,
-    startTime,
-    endTime,
-    elapsedMs,
-    amount,
-    time
-  });
+function readActiveSession() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ACTIVE_SESSION_KEY) || "null");
+    if (saved && /^\d+$/.test(String(saved.code)) && ["initiator", "joiner"].includes(saved.role)) {
+      return { code: String(saved.code), role: saved.role };
+    }
+  } catch (error) {
+    console.warn("Could not restore saved session:", error);
+  }
+  return null;
+}
+
+function showEndedState() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  if (animationId) cancelAnimationFrame(animationId);
+  updateDisplay();
+  stopBubbles();
+  setStatus("Session ended");
+
+  if (isInitiator) {
+    const finalAmount = getFinalAmount();
+    document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
+    document.getElementById("paymentButtons").style.display = "block";
+    document.getElementById("endSection").style.display = "block";
+  }
+  if (!isInitiator) document.getElementById("endButtonContainer").innerHTML = "";
 }
 
 let timerInterval = null;
@@ -442,6 +469,7 @@ function spawnBubble() {
 function startBubbles() {
   if (bubbleStartTimeout) return;
   bubbleStartTimeout = setTimeout(() => {
+    bubbleStartTimeout = null;
     spawnBubble();
     bubbleInterval = setInterval(() => {
       const count = 1 + Math.floor(Math.random() * 3);
@@ -455,6 +483,8 @@ function startBubbles() {
 function stopBubbles() {
   if (bubbleStartTimeout) clearTimeout(bubbleStartTimeout);
   if (bubbleInterval) clearInterval(bubbleInterval);
+  bubbleStartTimeout = null;
+  bubbleInterval = null;
   document.getElementById("bubbles").innerHTML = "";
 }
 
@@ -468,75 +498,59 @@ function addMessage(text, isSelf) {
 }
 
 function startChat(roomCode) {
-  currentRoomCode = roomCode;
+  // Detach listeners from a previous room before switching sessions.
+  if (messagesQuery) messagesQuery.off();
+  if (startTimeRef) startTimeRef.off();
+  if (endTimeRef) endTimeRef.off();
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  stopBubbles();
+  startTime = null;
+  endTime = null;
+
+  currentRoomCode = String(roomCode);
   myName = isInitiator ? "Initiator" : "Joiner";
-  roomRef = db.ref("rooms/" + roomCode);
+  roomRef = db.ref("rooms/" + currentRoomCode);
   messagesRef = roomRef.child("messages");
+  startTimeRef = roomRef.child("startTime");
+  endTimeRef = roomRef.child("endTime");
+  messagesQuery = messagesRef.orderByChild("timestamp");
 
+  document.getElementById("roomCode").textContent = currentRoomCode;
+  document.getElementById("roomDisplay").style.display = "block";
+  document.getElementById("controls").style.display = "none";
   document.getElementById("messages").innerHTML = "";
-  messagesRef.orderByChild("timestamp").on("child_added", (snapshot) => {
-    const msg = snapshot.val();
-    const isSelf = msg.sender === myName;
-    addMessage(msg.text, isSelf);
-  });
-
+  document.getElementById("paymentButtons").style.display = "none";
+  document.getElementById("endSection").style.display = "none";
   document.getElementById("chatBox").style.display = "block";
 
-  // Reliable startTime listener
-  roomRef.child("startTime").on("value", (snap) => {
-  const val = Number(snap.val());
+  messagesQuery.on("child_added", (snapshot) => {
+    const msg = snapshot.val();
+    if (!msg || typeof msg.text !== "string") return;
+    addMessage(msg.text, msg.sender === myName);
+  });
 
-  console.log("Firebase startTime received:", val);
-
-  if (!Number.isFinite(val) || val <= 0) {
-    return;
-  }
-
-  // Always synchronize the local timestamp with Firebase.
-  // Both manual-code and email-link joins use this listener.
-  if (startTime !== val) {
+  startTimeRef.on("value", (snap) => {
+    const val = Number(snap.val());
+    if (!Number.isFinite(val) || val <= 0) return;
     startTime = val;
-  }
-
-  if (!endTime) {
-    setStatus("Session started");
-    startLoop();
-    startBubbles();
-  } else {
-    updateDisplay();
-  }
-});
- 
-  // Reliable endTime listener
-  roomRef.child("endTime").on("value", (snap) => {
-    const val = snap.val();
-
-    if (val && !endTime) {
-      endTime = Number(val);
-
-      // Stop the timer interval.
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-      }
-
-      if (animationId) cancelAnimationFrame(animationId);
-
-      // Freeze counters at the final time.
+    if (endTime) {
       updateDisplay();
+      showEndedState();
+    } else {
+      setStatus("Session started");
+      startLoop();
+      startBubbles();
+    }
+  });
 
-      stopBubbles();
-      setStatus("Session ended");
-
-      if (isInitiator) {
-        const finalAmount = getFinalAmount();
-
-        document.getElementById("paypalLink").href =
-          `https://paypal.me/fhyrapaypal/${finalAmount}`;
-
-        document.getElementById("paymentButtons").style.display = "block";
-        document.getElementById("endSection").style.display = "block";
-      }
+  endTimeRef.on("value", (snap) => {
+    const val = Number(snap.val());
+    if (Number.isFinite(val) && val > 0) {
+      endTime = val;
+      showEndedState();
     }
   });
 }
@@ -563,12 +577,16 @@ document.getElementById("chatInput").addEventListener("keypress", (e) => {
 const EMAILJS_PUBLIC_KEY = "6yUaltYoDr-gtit33";
 const EMAILJS_SERVICE_ID = "service_yhtrk8j";
 const EMAILJS_TEMPLATE_ID = "template_49qhzsr";
+// Set this to the deployed HTTPS website URL before distributing the app.
+// Example: https://your-domain.example/ (no trailing slash needed)
+const JOIN_BASE_URL = "https://fhyrajackal.github.io/fhyra-findom";
 
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
 function initiateSession() {
   isInitiator = true;
   const code = Date.now().toString();
+  saveActiveSession(code, "initiator");
   document.getElementById("roomCode").textContent = code;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
@@ -577,7 +595,7 @@ function initiateSession() {
   startChat(code);
 
   // Build a direct join link
-  const joinLink = window.location.origin + window.location.pathname + "?start=" + code;
+  const joinLink = JOIN_BASE_URL + "/?start=" + encodeURIComponent(code);
 
   // Send the email
   setStatus("Sending join email…");
@@ -592,14 +610,12 @@ function initiateSession() {
     setStatus("Email failed — share the room code manually");
   });
 
-  // Still update the URL for convenience
-  const url = new URL(window.location);
-  url.searchParams.set("start", code);
-  window.history.replaceState({}, "", url);
 }
 
 function joinRoomByCode(code) {
   isInitiator = false;
+  code = String(code);
+  saveActiveSession(code, "joiner");
 
   document.getElementById("roomCode").textContent = code;
   document.getElementById("roomDisplay").style.display = "block";
@@ -609,33 +625,38 @@ function joinRoomByCode(code) {
 
   const room = db.ref("rooms/" + code);
 
-  room.child("startTime").transaction(
-    (current) => current || getServerNow(),
-    (error, committed, snapshot) => {
-      if (error) {
-        console.error("Failed to join room:", error);
-        setStatus("Error joining: " + error.message);
-        return;
+  db.ref(".info/serverTimeOffset").once("value").then((offsetSnapshot) => {
+    serverTimeOffset = Number(offsetSnapshot.val()) || serverTimeOffset;
+    return room.child("startTime").transaction(
+      (current) => current || getServerNow(),
+      (error, committed, snapshot) => {
+        if (error) {
+          console.error("Failed to join room:", error);
+          setStatus("Error joining: " + error.message);
+          return;
+        }
+
+        if (!snapshot.exists() || !snapshot.val()) {
+          setStatus("Could not obtain session start time.");
+          return;
+        }
+
+        setStatus(
+          committed
+            ? "Joined — session started"
+            : "Joined existing session"
+        );
+
+        // Both manual-code and emailed-link joins initialize the same listeners.
+        startChat(code);
+        document.getElementById("endButtonContainer").innerHTML =
+          '<button class="end-btn" onclick="endSession()">End Session</button>';
       }
-
-      if (!snapshot.exists() || !snapshot.val()) {
-        setStatus("Could not obtain session start time.");
-        return;
-      }
-
-      setStatus(
-        committed
-          ? "Joined — session started"
-          : "Joined existing session"
-      );
-
-      // Both join methods now initialize the same listeners.
-      startChat(code);
-
-      document.getElementById("endButtonContainer").innerHTML =
-        '<button class="end-btn" onclick="endSession()">End Session</button>';
-    }
-  );
+    );
+  }).catch((error) => {
+    console.error("Failed to get Firebase server time:", error);
+    setStatus("Could not connect to Firebase. Check your connection and retry.");
+  });
 }
 
 function joinSession() {
@@ -653,7 +674,10 @@ function endSession() {
   if (isInitiator || endTime || !roomRef) return;
 
   const now = getServerNow();
-  roomRef.child("endTime").set(now);
+  roomRef.child("endTime").set(now).catch((error) => {
+    console.error("Could not end session:", error);
+    setStatus("Could not end session. Check your connection and try again.");
+  });
 
   if (messagesRef) {
     messagesRef.push({
@@ -694,14 +718,89 @@ function copyCode() {
     .catch(() => alert("Copy failed — please select and copy manually"));
 }
 
+function restoreSavedSession() {
+  const saved = readActiveSession();
+  if (!saved) return false;
+
+  isInitiator = saved.role === "initiator";
+  document.getElementById("roomCode").textContent = saved.code;
+  document.getElementById("roomDisplay").style.display = "block";
+  document.getElementById("controls").style.display = "none";
+  setStatus("Restoring session…");
+  startChat(saved.code);
+
+  if (!isInitiator) {
+    document.getElementById("endButtonContainer").innerHTML =
+      '<button class="end-btn" onclick="endSession()">End Session</button>';
+  }
+  return true;
+}
+
+async function refreshRoomState() {
+  if (!roomRef) return;
+  try {
+    // Refresh the server offset and both durable timestamps after a resume/reconnect.
+    const offsetSnapshot = await db.ref(".info/serverTimeOffset").once("value");
+    serverTimeOffset = Number(offsetSnapshot.val()) || serverTimeOffset;
+    const [startSnapshot, endSnapshot] = await Promise.all([
+      roomRef.child("startTime").once("value"),
+      roomRef.child("endTime").once("value")
+    ]);
+
+    const startVal = Number(startSnapshot.val());
+    const endVal = Number(endSnapshot.val());
+    if (Number.isFinite(startVal) && startVal > 0) startTime = startVal;
+    if (Number.isFinite(endVal) && endVal > 0) endTime = endVal;
+
+    if (endTime) {
+      showEndedState();
+    } else if (startTime) {
+      setStatus("Session started");
+      startLoop();
+      startBubbles();
+    }
+  } catch (error) {
+    // Firebase listeners will retry when connectivity returns; do not erase local state.
+    console.warn("Could not refresh session state yet:", error);
+    updateDisplay();
+  }
+}
+
+function handleAppResume() {
+  if (!roomRef) return;
+  // Paint a current estimate immediately, even if the network is still reconnecting.
+  updateDisplay();
+  if (startTime && !endTime) startLoop();
+  refreshRoomState();
+}
+
 window.addEventListener("load", () => {
   const params = new URLSearchParams(window.location.search);
   const startParam = params.get("start");
 
   if (startParam && /^\d+$/.test(startParam)) {
     joinRoomByCode(startParam);
+    return;
+  }
+
+  restoreSavedSession();
+});
+
+// Mobile browsers throttle JavaScript timers in the background. The session itself
+// is timestamp-based, so stop cosmetic work while hidden and resync when visible.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    stopBubbles();
+  } else {
+    handleAppResume();
   }
 });
+window.addEventListener("pageshow", handleAppResume);
+window.addEventListener("online", handleAppResume);
 </script>
 </body>
 </html>
