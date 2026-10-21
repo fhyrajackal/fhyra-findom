@@ -261,6 +261,7 @@
   <div id="status"></div>
 
   <div class="controls" id="controls">
+    <input type="text" id="initiatorNameInput" placeholder="Your username" maxlength="40" autocomplete="nickname" aria-label="Your username" />
     <button onclick="initiateSession()">Initiate Session</button>
     <div style="margin: 0.7rem 0; color: #b07080;">or</div>
     <input type="text" id="roomInput" placeholder="Enter room code" inputmode="numeric" autocomplete="off" />
@@ -337,6 +338,7 @@ let currentRoomCode = null;
 let messagesRef = null;
 let roomRef = null;
 let myName = null;
+let initiatorName = "";
 let startTimeRef = null;
 let endTimeRef = null;
 let resetRef = null;
@@ -381,9 +383,9 @@ function updateDisplay() {
   document.getElementById("time").textContent = formatTime(elapsedMs);
 }
 
-function saveActiveSession(code, role) {
+function saveActiveSession(code, role, username = "") {
   try {
-    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ code: String(code), role }));
+    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ code: String(code), role, username }));
   } catch (error) {
     console.warn("Could not persist active session on this device:", error);
   }
@@ -393,7 +395,7 @@ function readActiveSession() {
   try {
     const saved = JSON.parse(localStorage.getItem(ACTIVE_SESSION_KEY) || "null");
     if (saved && /^\d+$/.test(String(saved.code)) && ["initiator", "joiner"].includes(saved.role)) {
-      return { code: String(saved.code), role: saved.role };
+      return { code: String(saved.code), role: saved.role, username: typeof saved.username === "string" ? saved.username : "" };
     }
   } catch (error) {
     console.warn("Could not restore saved session:", error);
@@ -577,7 +579,7 @@ function startChat(roomCode) {
   endTime = null;
 
   currentRoomCode = String(roomCode);
-  myName = isInitiator ? "Initiator" : "Joiner";
+  myName = isInitiator ? (initiatorName || "Initiator") : "Fhyra";
   roomRef = db.ref("rooms/" + currentRoomCode);
   messagesRef = roomRef.child("messages");
   startTimeRef = roomRef.child("startTime");
@@ -658,9 +660,18 @@ const JOIN_BASE_URL = "https://fhyrajackal.github.io/fhyra-findom";
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
 function initiateSession() {
+  const nameInput = document.getElementById("initiatorNameInput");
+  const enteredName = nameInput.value.trim().replace(/\\s+/g, " ");
+  if (!enteredName) {
+    setStatus("Please enter your username first.");
+    nameInput.focus();
+    return;
+  }
+
+  initiatorName = enteredName.slice(0, 40);
   isInitiator = true;
   const code = Date.now().toString();
-  saveActiveSession(code, "initiator");
+  saveActiveSession(code, "initiator", initiatorName);
   document.getElementById("roomCode").textContent = code;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
@@ -676,7 +687,8 @@ function initiateSession() {
   emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
     to_email: "hanychlaura@gmail.com",
     join_link: joinLink,
-    room_code: code
+    room_code: code,
+    initiator_username: initiatorName
   }).then(() => {
     setStatus("Join email sent — waiting for Fhyra to ruin you~");
   }).catch((err) => {
@@ -688,6 +700,7 @@ function initiateSession() {
 
 function joinRoomByCode(code) {
   isInitiator = false;
+  initiatorName = "";
   code = String(code);
   saveActiveSession(code, "joiner");
 
@@ -810,6 +823,9 @@ function restoreSavedSession() {
   if (!saved) return false;
 
   isInitiator = saved.role === "initiator";
+  initiatorName = isInitiator ? (saved.username || "") : "";
+  const nameInput = document.getElementById("initiatorNameInput");
+  if (nameInput && isInitiator && initiatorName) nameInput.value = initiatorName;
   document.getElementById("roomCode").textContent = saved.code;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
