@@ -275,6 +275,53 @@
     color: #b07080;
     font-size: 0.8rem;
   }
+  #extraTributeSection {
+    display: none;
+    width: 100%;
+    max-width: 420px;
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(190, 70, 100, 0.58);
+    border-radius: 16px;
+    background: rgba(15, 4, 8, 0.86);
+    box-shadow: 0 8px 28px rgba(80, 10, 25, 0.48);
+    text-align: center;
+  }
+  #extraTributeDraw {
+    display: none;
+    margin-top: 0.25rem;
+  }
+  #extraTributeHeading {
+    color: #ffc2ce;
+    margin: 0.2rem 0 0.65rem;
+  }
+  #extraTributeAmount {
+    color: #ff7a95;
+    font-size: clamp(2.5rem, 12vw, 3.4rem);
+    font-weight: 800;
+    letter-spacing: -1px;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 22px rgba(255, 100, 120, 0.42);
+    margin: 0.35rem 0;
+  }
+  #extraTributeAmount.spinning {
+    animation: extraTributePulse 0.18s ease-in-out infinite alternate;
+  }
+  @keyframes extraTributePulse {
+    from { transform: scale(0.96) rotate(-1deg); opacity: 0.78; }
+    to { transform: scale(1.04) rotate(1deg); opacity: 1; }
+  }
+  #extraTributeStatus, #extraTributeNote {
+    color: #d8a2ae;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    margin-top: 0.5rem;
+  }
+  #extraTributeNote {
+    color: #b07080;
+    font-size: 0.78rem;
+  }
+  #extraTributePaymentButtons { display: none; }
 </style>
 </head>
 <body>
@@ -330,10 +377,25 @@
 
   <div id="accountSummary" aria-live="polite">
     <div id="accountUsername">Tribute history</div>
-    <div id="accountTotal">Total tributed: $0.00</div>
+    <div id="accountTotal">Lifetime tribute total: $0.00</div>
     <div id="accountMessage"></div>
-    <div id="accountNote">Only completed sessions count toward this total.</div>
+    <div id="accountNote">Completed sessions and confirmed extra tributes count toward this total.</div>
   </div>
+
+  <section id="extraTributeSection" aria-live="polite">
+    <button type="button" id="extraTributeStartButton">Extra tribute</button>
+    <div id="extraTributeDraw">
+      <div id="extraTributeHeading">Your extra tribute amount</div>
+      <div id="extraTributeAmount">$25.00</div>
+      <div id="extraTributeStatus">Rolling for an amount…</div>
+      <div id="extraTributePaymentButtons" class="payment-buttons">
+        <a id="extraPaypalLink" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener"><button type="button" class="pay-btn">Pay with PayPal</button></a>
+        <a href="https://throne.com/fhyrajackal" target="_blank" rel="noopener"><button type="button" class="throne-btn">Pay with Throne</button></a>
+      </div>
+      <button type="button" id="confirmExtraTributeButton" style="display:none">Confirm tribute</button>
+      <div id="extraTributeNote">Confirm only after sending the displayed amount. This confirmation is not independently verified by PayPal or Throne.</div>
+    </div>
+  </section>
 
 <script>
 // Client-side guardrails help prevent accidental misuse, but cannot enforce security by themselves.
@@ -391,9 +453,14 @@ let sessionAccountUsername = "";
 let sessionAccountKey = "";
 let accountTotalAmount = 0;
 let messagesQuery = null;
+let extraTributeRef = null;
+let extraTributeState = null;
+let extraTributeSpinTimer = null;
+let activeExtraTributeSpinId = null;
 const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
 
 const RATE_PER_MINUTE = 3;
+const EXTRA_TRIBUTE_SPIN_DURATION_MS = 2400;
 const ROOM_CODE_PATTERN = /^(?:\d{13}|[a-f0-9]{32})$/i; // legacy rooms + new unguessable rooms
 
 function generateRoomCode() {
@@ -496,7 +563,7 @@ function renderAccountSummary() {
     ? `Tribute history for ${sessionAccountUsername}`
     : "Loading tribute account…";
   document.getElementById("accountTotal").textContent =
-    `Total tributed: $${accountTotalAmount.toFixed(2)}`;
+    `Lifetime tribute total: $${accountTotalAmount.toFixed(2)}`;
   setTextWithEmphasis(
     document.getElementById("accountMessage"),
     getAccountTierMessage(accountTotalAmount)
@@ -509,9 +576,11 @@ function setAccountUsername(name) {
 
   const key = getUsernameAccountKey(normalizedName);
   sessionAccountUsername = normalizedName;
+  renderExtraTributePanel();
   if (sessionAccountKey === key && accountSessionsRef) {
     renderAccountSummary();
     recordEndedSession();
+    recordConfirmedExtraTribute(extraTributeState);
     return;
   }
 
@@ -536,6 +605,7 @@ function setAccountUsername(name) {
   });
 
   recordEndedSession();
+  recordConfirmedExtraTribute(extraTributeState);
 }
 
 function recordEndedSession() {
@@ -558,6 +628,200 @@ function recordEndedSession() {
       console.error("Could not record ended session for tribute history:", error);
       setStatus("Session ended, but its tribute total could not be saved. Check Firebase database permissions.");
     });
+}
+
+function recordConfirmedExtraTribute(state) {
+  // The joiner confirms a draw; the entry is keyed by that draw's unique ID so
+  // both participants can safely attempt the same idempotent database write.
+  if (!state || state.status !== "confirmed" || !state.id || !currentRoomCode ||
+      !sessionAccountUsername || !accountSessionsRef) return;
+
+  const amount = Number(state.amount);
+  if (!Number.isFinite(amount) || amount < 25 || amount > 250 || amount % 5 !== 0) return;
+
+  const entry = {
+    amount: Math.round(amount * 100) / 100,
+    username: sessionAccountUsername,
+    roomCode: String(currentRoomCode),
+    type: "confirmedExtraTribute",
+    extraTributeId: String(state.id),
+    endedAt: Number(state.confirmedAt) || getServerNow()
+  };
+  const entryKey = `extra_${String(currentRoomCode)}_${String(state.id)}`;
+  accountSessionsRef.child(entryKey).transaction((current) => current || entry)
+    .catch((error) => {
+      console.error("Could not save confirmed extra tribute:", error);
+      setStatus("The extra tribute was confirmed, but its account total could not be saved. Check Firebase database permissions.");
+    });
+}
+
+function clearExtraTributeSpinTimer() {
+  if (extraTributeSpinTimer !== null) clearTimeout(extraTributeSpinTimer);
+  extraTributeSpinTimer = null;
+}
+
+function getRandomExtraTributeAmount() {
+  // 46 possible values: $25, $30, …, $250.
+  return 25 + Math.floor(Math.random() * 46) * 5;
+}
+
+function finishExtraTributeSpin(state) {
+  clearExtraTributeSpinTimer();
+  activeExtraTributeSpinId = state.id;
+
+  const amountElement = document.getElementById("extraTributeAmount");
+  amountElement.classList.remove("spinning");
+  amountElement.textContent = `$${Number(state.amount).toFixed(2)}`;
+  document.getElementById("extraTributeStatus").textContent = isInitiator
+    ? "The payment options are ready. The joiner can confirm after sending this amount."
+    : "Send the displayed amount, then confirm the tribute below.";
+
+  document.getElementById("extraTributePaymentButtons").style.display = isInitiator ? "block" : "none";
+  document.getElementById("confirmExtraTributeButton").style.display = isInitiator ? "none" : "inline-block";
+  document.getElementById("confirmExtraTributeButton").disabled = false;
+  document.getElementById("extraPaypalLink").href = `https://paypal.me/fhyrapaypal/${Number(state.amount).toFixed(2)}`;
+}
+
+function startExtraTributeSpin(state) {
+  if (activeExtraTributeSpinId === state.id && extraTributeSpinTimer !== null) return;
+  clearExtraTributeSpinTimer();
+  activeExtraTributeSpinId = state.id;
+
+  const amountElement = document.getElementById("extraTributeAmount");
+  amountElement.classList.add("spinning");
+  document.getElementById("extraTributeStatus").textContent = "Rolling for an amount…";
+  document.getElementById("extraTributePaymentButtons").style.display = "none";
+  document.getElementById("confirmExtraTributeButton").style.display = "none";
+
+  const finishAt = Number(state.createdAt) + EXTRA_TRIBUTE_SPIN_DURATION_MS;
+  const tick = () => {
+    if (!extraTributeState || extraTributeState.id !== state.id || extraTributeState.status !== "pending") return;
+
+    const remaining = finishAt - getServerNow();
+    if (remaining <= 0) {
+      finishExtraTributeSpin(state);
+      return;
+    }
+
+    amountElement.textContent = `$${getRandomExtraTributeAmount().toFixed(2)}`;
+    const progress = Math.min(1, Math.max(0, 1 - remaining / EXTRA_TRIBUTE_SPIN_DURATION_MS));
+    const nextDelay = Math.min(remaining, 45 + Math.floor(progress * progress * 185));
+    extraTributeSpinTimer = setTimeout(tick, nextDelay);
+  };
+  tick();
+}
+
+function renderExtraTributePanel() {
+  const section = document.getElementById("extraTributeSection");
+  const startButton = document.getElementById("extraTributeStartButton");
+  const draw = document.getElementById("extraTributeDraw");
+
+  if (!currentRoomCode || !extraTributeRef || !sessionAccountUsername) {
+    section.style.display = "none";
+    return;
+  }
+
+  section.style.display = "block";
+  startButton.textContent = isInitiator ? "Show real gratitude, paypup" : "Extra tribute";
+  const state = extraTributeState;
+
+  if (!state || state.status === "confirmed") {
+    clearExtraTributeSpinTimer();
+    activeExtraTributeSpinId = null;
+    startButton.style.display = "inline-block";
+    draw.style.display = "none";
+    return;
+  }
+
+  if (state.status !== "pending") {
+    startButton.style.display = "inline-block";
+    draw.style.display = "none";
+    return;
+  }
+
+  const amount = Number(state.amount);
+  if (!state.id || !Number.isFinite(amount) || amount < 25 || amount > 250 || amount % 5 !== 0 ||
+      !Number.isFinite(Number(state.createdAt)) || Number(state.createdAt) <= 0) {
+    startButton.style.display = "inline-block";
+    draw.style.display = "none";
+    return;
+  }
+
+  startButton.style.display = "none";
+  draw.style.display = "block";
+  if (getServerNow() < Number(state.createdAt) + EXTRA_TRIBUTE_SPIN_DURATION_MS) {
+    startExtraTributeSpin(state);
+  } else {
+    finishExtraTributeSpin(state);
+  }
+}
+
+async function startExtraTributeDraw() {
+  if (!currentRoomCode || !roomRef || !extraTributeRef) return;
+  if (extraTributeState && extraTributeState.status === "pending") {
+    setStatus("An extra tribute is already waiting for confirmation.");
+    return;
+  }
+
+  const drawId = extraTributeRef.push().key;
+  const newDraw = {
+    id: drawId,
+    amount: getRandomExtraTributeAmount(),
+    status: "pending",
+    createdAt: getServerNow(),
+    createdBy: myName || (isInitiator ? initiatorName : "Fhyra")
+  };
+
+  try {
+    const result = await extraTributeRef.transaction((current) => {
+      if (current && current.status === "pending") return;
+      if (current && current.status !== "confirmed") return;
+      return newDraw;
+    });
+    if (!result.committed) {
+      setStatus("An extra tribute is already waiting for confirmation. Finish it before drawing again.");
+    }
+  } catch (error) {
+    console.error("Could not draw an extra tribute:", error);
+    setStatus("Could not start the extra tribute. Check your connection and Firebase permissions.");
+  }
+}
+
+async function confirmExtraTribute() {
+  if (isInitiator || !extraTributeRef || !extraTributeState || extraTributeState.status !== "pending") return;
+  const stateId = extraTributeState.id;
+  const amount = Number(extraTributeState.amount);
+  const readyAt = Number(extraTributeState.createdAt) + EXTRA_TRIBUTE_SPIN_DURATION_MS;
+  if (getServerNow() < readyAt || !Number.isFinite(amount) || amount < 25 || amount > 250 || amount % 5 !== 0) {
+    return;
+  }
+
+  const button = document.getElementById("confirmExtraTributeButton");
+  button.disabled = true;
+  try {
+    const result = await extraTributeRef.transaction((current) => {
+      if (!current || current.id !== stateId || current.status !== "pending") return;
+      const currentAmount = Number(current.amount);
+      if (!Number.isFinite(currentAmount) || currentAmount < 25 || currentAmount > 250 || currentAmount % 5 !== 0) return;
+      return {
+        ...current,
+        status: "confirmed",
+        confirmedAt: getServerNow(),
+        confirmedBy: myName || "Fhyra"
+      };
+    });
+
+    if (result.committed) {
+      setStatus(`Extra tribute of $${amount.toFixed(2)} confirmed. Updating the account total…`);
+    } else {
+      button.disabled = false;
+      setStatus("This extra tribute has already been confirmed or replaced.");
+    }
+  } catch (error) {
+    console.error("Could not confirm extra tribute:", error);
+    button.disabled = false;
+    setStatus("Could not confirm the extra tribute. Check your connection and try again.");
+  }
 }
 
 function updateDisplay() {
@@ -631,8 +895,13 @@ function returnToMainMenu() {
   if (endTimeRef) endTimeRef.off();
   if (resetRef) resetRef.off();
   if (initiatorNameRef) initiatorNameRef.off();
+  if (extraTributeRef) extraTributeRef.off();
   if (accountSessionsRef) accountSessionsRef.off();
   if (roomRef) roomRef.off();
+  clearExtraTributeSpinTimer();
+  extraTributeRef = null;
+  extraTributeState = null;
+  activeExtraTributeSpinId = null;
 
   if (timerInterval) {
     clearInterval(timerInterval);
@@ -683,8 +952,13 @@ function returnToMainMenu() {
   document.getElementById("roomDisplay").style.display = "none";
   document.getElementById("chatBox").style.display = "none";
   document.getElementById("accountSummary").style.display = "none";
+  document.getElementById("extraTributeSection").style.display = "none";
+  document.getElementById("extraTributeDraw").style.display = "none";
+  document.getElementById("extraTributeStartButton").style.display = "inline-block";
+  document.getElementById("extraTributePaymentButtons").style.display = "none";
+  document.getElementById("confirmExtraTributeButton").style.display = "none";
   document.getElementById("accountUsername").textContent = "Tribute history";
-  document.getElementById("accountTotal").textContent = "Total tributed: $0.00";
+  document.getElementById("accountTotal").textContent = "Lifetime tribute total: $0.00";
   document.getElementById("accountMessage").textContent = "";
   document.getElementById("paymentButtons").style.display = "none";
   document.getElementById("endSection").style.display = "none";
@@ -781,7 +1055,12 @@ function startChat(roomCode) {
   if (endTimeRef) endTimeRef.off();
   if (resetRef) resetRef.off();
   if (initiatorNameRef) initiatorNameRef.off();
+  if (extraTributeRef) extraTributeRef.off();
   if (accountSessionsRef) accountSessionsRef.off();
+  clearExtraTributeSpinTimer();
+  extraTributeRef = null;
+  extraTributeState = null;
+  activeExtraTributeSpinId = null;
   accountSessionsRef = null;
   sessionAccountKey = "";
   sessionAccountUsername = "";
@@ -802,6 +1081,7 @@ function startChat(roomCode) {
   endTimeRef = roomRef.child("endTime");
   resetRef = roomRef.child("resetAt");
   initiatorNameRef = roomRef.child("initiatorName");
+  extraTributeRef = roomRef.child("extraTributeState");
   messagesQuery = messagesRef.orderByChild("timestamp");
 
   // Show the account below the chat immediately, including the user's first session.
@@ -828,6 +1108,15 @@ function startChat(roomCode) {
     }
   });
 
+  extraTributeRef.on("value", (snapshot) => {
+    const value = snapshot.val();
+    extraTributeState = value && typeof value === "object" ? value : null;
+    renderExtraTributePanel();
+    if (extraTributeState && extraTributeState.status === "confirmed") {
+      recordConfirmedExtraTribute(extraTributeState);
+    }
+  });
+
   document.getElementById("roomCode").textContent = currentRoomCode;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
@@ -837,6 +1126,7 @@ function startChat(roomCode) {
   document.getElementById("chatBox").style.display = "block";
   document.getElementById("chatInput").disabled = false;
   document.getElementById("sendBtn").disabled = false;
+  renderExtraTributePanel();
 
   messagesQuery.on("child_added", (snapshot) => {
     const msg = snapshot.val();
@@ -900,6 +1190,8 @@ function sendMessage() {
 document.getElementById("chatInput").addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendMessage();
 });
+document.getElementById("extraTributeStartButton").addEventListener("click", startExtraTributeDraw);
+document.getElementById("confirmExtraTributeButton").addEventListener("click", confirmExtraTribute);
 
 // Put these near the top of your script with your real values
 const EMAILJS_PUBLIC_KEY = "6yUaltYoDr-gtit33";
@@ -1014,6 +1306,7 @@ async function joinRoomByCode(code) {
     document.getElementById("roomDisplay").style.display = "none";
     document.getElementById("chatBox").style.display = "none";
     document.getElementById("accountSummary").style.display = "none";
+    document.getElementById("extraTributeSection").style.display = "none";
     document.getElementById("endSection").style.display = "none";
     document.getElementById("paymentButtons").style.display = "none";
     try {
