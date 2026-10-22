@@ -161,6 +161,7 @@
     width: min(100%, 280px);
   }
   button:active { background: #a21a3a; transform: scale(0.98); }
+  button:disabled { opacity: 0.42; cursor: not-allowed; filter: grayscale(0.45); }
   button.end-btn { background: #7f1d1d; }
   button.end-btn:active { background: #991b1b; }
   button.pay-btn { background: #0070ba; width: min(100%, 220px); }
@@ -462,6 +463,8 @@ let sessionAccountKey = "";
 let accountTotalAmount = 0;
 let messagesQuery = null;
 let extraTributeRef = null;
+let joinerPresenceRef = null;
+let joinerHasJoined = false;
 let extraTributeState = null;
 let extraTributeSpinTimer = null;
 let activeExtraTributeSpinId = null;
@@ -748,6 +751,8 @@ function renderExtraTributePanel() {
   startButton.style.display = isInitiator ? "inline-block" : "none";
   startHint.style.display = isInitiator ? "block" : "none";
   joinerLabel.style.display = isInitiator ? "none" : "block";
+  startButton.disabled = isInitiator && !joinerHasJoined;
+  startButton.title = startButton.disabled ? "Waiting for the joiner to join the session." : "";
   const state = extraTributeState;
 
   if (!state || state.status === "confirmed") {
@@ -794,6 +799,10 @@ function renderExtraTributePanel() {
 
 async function startExtraTributeDraw() {
   if (!currentRoomCode || !roomRef || !extraTributeRef) return;
+  if (isInitiator && !joinerHasJoined) {
+    setStatus("Waiting for the joiner to join before starting an extra tribute.");
+    return;
+  }
   if (extraTributeState && extraTributeState.status === "pending") {
     setStatus("An extra tribute is already waiting for confirmation.");
     return;
@@ -932,10 +941,13 @@ function returnToMainMenu() {
   if (resetRef) resetRef.off();
   if (initiatorNameRef) initiatorNameRef.off();
   if (extraTributeRef) extraTributeRef.off();
+  if (joinerPresenceRef) joinerPresenceRef.off();
   if (accountSessionsRef) accountSessionsRef.off();
   if (roomRef) roomRef.off();
   clearExtraTributeSpinTimer();
   extraTributeRef = null;
+  joinerPresenceRef = null;
+  joinerHasJoined = false;
   extraTributeState = null;
   activeExtraTributeSpinId = null;
 
@@ -1094,9 +1106,12 @@ function startChat(roomCode) {
   if (resetRef) resetRef.off();
   if (initiatorNameRef) initiatorNameRef.off();
   if (extraTributeRef) extraTributeRef.off();
+  if (joinerPresenceRef) joinerPresenceRef.off();
   if (accountSessionsRef) accountSessionsRef.off();
   clearExtraTributeSpinTimer();
   extraTributeRef = null;
+  joinerPresenceRef = null;
+  joinerHasJoined = false;
   extraTributeState = null;
   activeExtraTributeSpinId = null;
   accountSessionsRef = null;
@@ -1120,7 +1135,22 @@ function startChat(roomCode) {
   resetRef = roomRef.child("resetAt");
   initiatorNameRef = roomRef.child("initiatorName");
   extraTributeRef = roomRef.child("extraTributeState");
+  joinerPresenceRef = roomRef.child("joinerPresent");
+  joinerHasJoined = false;
   messagesQuery = messagesRef.orderByChild("timestamp");
+
+  // The initiator can start an extra tribute only while the joiner is present.
+  if (isInitiator) {
+    joinerPresenceRef.on("value", (snapshot) => {
+      joinerHasJoined = snapshot.val() === true;
+      renderExtraTributePanel();
+    });
+  } else {
+    // Mark the joiner as present and clear the flag automatically on disconnect.
+    joinerPresenceRef.onDisconnect().remove()
+      .then(() => joinerPresenceRef.set(true))
+      .catch((error) => console.error("Could not register joiner presence:", error));
+  }
 
   // Show the account below the chat immediately, including the user's first session.
   document.getElementById("accountSummary").style.display = "block";
