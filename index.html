@@ -287,6 +287,12 @@
     box-shadow: 0 8px 28px rgba(80, 10, 25, 0.48);
     text-align: center;
   }
+  #extraTributeHint {
+    color: #b07080;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    margin: 0.4rem 0 0.65rem;
+  }
   #extraTributeDraw {
     display: none;
     margin-top: 0.25rem;
@@ -384,7 +390,8 @@
 
   <section id="extraTributeSection" aria-live="polite">
     <button type="button" id="extraTributeStartButton">Show real gratitude, paypup</button>
-    <div id="extraTributeJoinerLabel" style="display:none; color:#ffc2ce; margin-bottom:0.5rem;">Extra tribute</div>
+    <div id="extraTributeHint" style="display:none;">You will roll an amount from $25 to $250 to worship the true goddess.</div>
+    <div id="extraTributeJoinerLabel" style="display:none; color:#ffc2ce; margin-bottom:0.5rem;">Waiting for extra tribute...</div>
     <div id="extraTributeDraw">
       <div id="extraTributeHeading">Your extra tribute amount</div>
       <div id="extraTributeAmount">$25.00</div>
@@ -728,6 +735,7 @@ function startExtraTributeSpin(state) {
 function renderExtraTributePanel() {
   const section = document.getElementById("extraTributeSection");
   const startButton = document.getElementById("extraTributeStartButton");
+  const startHint = document.getElementById("extraTributeHint");
   const draw = document.getElementById("extraTributeDraw");
 
   if (!currentRoomCode || !extraTributeRef || !sessionAccountUsername) {
@@ -739,6 +747,7 @@ function renderExtraTributePanel() {
   const joinerLabel = document.getElementById("extraTributeJoinerLabel");
   startButton.textContent = "Show real gratitude, paypup";
   startButton.style.display = isInitiator ? "inline-block" : "none";
+  startHint.style.display = isInitiator ? "block" : "none";
   joinerLabel.style.display = isInitiator ? "none" : "block";
   const state = extraTributeState;
 
@@ -746,14 +755,18 @@ function renderExtraTributePanel() {
     clearExtraTributeSpinTimer();
     activeExtraTributeSpinId = null;
     startButton.style.display = isInitiator ? "inline-block" : "none";
+    startHint.style.display = isInitiator ? "block" : "none";
     joinerLabel.style.display = isInitiator ? "none" : "block";
+    if (!isInitiator) joinerLabel.textContent = "Waiting for extra tribute...";
     draw.style.display = "none";
     return;
   }
 
   if (state.status !== "pending") {
     startButton.style.display = isInitiator ? "inline-block" : "none";
+    startHint.style.display = isInitiator ? "block" : "none";
     joinerLabel.style.display = isInitiator ? "none" : "block";
+    if (!isInitiator) joinerLabel.textContent = "Waiting for extra tribute...";
     draw.style.display = "none";
     return;
   }
@@ -762,12 +775,15 @@ function renderExtraTributePanel() {
   if (!state.id || !Number.isFinite(amount) || amount < 25 || amount > 250 || amount % 5 !== 0 ||
       !Number.isFinite(Number(state.createdAt)) || Number(state.createdAt) <= 0) {
     startButton.style.display = isInitiator ? "inline-block" : "none";
+    startHint.style.display = isInitiator ? "block" : "none";
     joinerLabel.style.display = isInitiator ? "none" : "block";
+    if (!isInitiator) joinerLabel.textContent = "Waiting for extra tribute...";
     draw.style.display = "none";
     return;
   }
 
   startButton.style.display = "none";
+  startHint.style.display = "none";
   joinerLabel.style.display = isInitiator ? "none" : "block";
   joinerLabel.textContent = `Extra tribute: $${amount.toFixed(2)}`;
   draw.style.display = "block";
