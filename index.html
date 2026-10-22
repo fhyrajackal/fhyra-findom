@@ -241,6 +241,40 @@
     padding-left: 1.1rem;
     padding-right: 1.1rem;
   }
+  #accountSummary {
+    display: none;
+    width: 100%;
+    max-width: 420px;
+    margin-top: 0.75rem;
+    padding: 1rem;
+    border: 1px solid rgba(160, 50, 70, 0.5);
+    border-radius: 14px;
+    background: rgba(15, 4, 8, 0.82);
+    box-shadow: 0 8px 28px rgba(80, 10, 25, 0.45);
+    text-align: center;
+    line-height: 1.5;
+  }
+  #accountUsername {
+    color: #ffc2ce;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  #accountTotal {
+    margin-top: 0.35rem;
+    color: #ff7a95;
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  #accountMessage {
+    margin-top: 0.6rem;
+    color: #f4d6dc;
+  }
+  #accountNote {
+    margin-top: 0.4rem;
+    color: #b07080;
+    font-size: 0.8rem;
+  }
 </style>
 </head>
 <body>
@@ -294,6 +328,13 @@
     </div>
   </div>
 
+  <div id="accountSummary" aria-live="polite">
+    <div id="accountUsername">Tribute history</div>
+    <div id="accountTotal">Total tributed in ended sessions: $0.00</div>
+    <div id="accountMessage"></div>
+    <div id="accountNote">Only completed sessions count toward this total.</div>
+  </div>
+
 <script>
 // ====== PASTE YOUR FIREBASE CONFIG HERE ======
 const firebaseConfig = {
@@ -342,6 +383,11 @@ let initiatorName = "";
 let startTimeRef = null;
 let endTimeRef = null;
 let resetRef = null;
+let initiatorNameRef = null;
+let accountSessionsRef = null;
+let sessionAccountUsername = "";
+let sessionAccountKey = "";
+let accountTotalAmount = 0;
 let messagesQuery = null;
 const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
 
@@ -368,6 +414,136 @@ function getElapsedMs() {
 function getFinalAmount() {
   const elapsedMs = getElapsedMs();
   return ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
+}
+
+function normalizeUsername(name) {
+  return String(name || "").trim().replace(/\s+/g, " ").slice(0, 40);
+}
+
+// Use a lowercase UTF-8 hex key so every valid username maps to a safe,
+// consistent Firebase path, regardless of capitalization or special characters.
+function getUsernameAccountKey(name) {
+  const normalized = normalizeUsername(name).toLowerCase();
+  if (!normalized) return "";
+  const bytes = new TextEncoder().encode(normalized);
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function getAccountTierMessage(total) {
+  if (total < 250) {
+    return "Prove you're worth keeping around, paypup.";
+  }
+  if (total <= 500) {
+    return "Show me how grateful you are for the privilege of being allowed to serve me.";
+  }
+  if (total <= 1000) {
+    return "Such a devoted little payslut, tribute everything to *the* goddess";
+  }
+  if (total <= 2500) {
+    return "Keep amusing me, my delectably eager toy. I'm going to ruin you, you know?";
+  }
+  if (total <= 5000) {
+    return "But you desperately *want* to, *need* to worship the perfection that is me, don't you, little food thing?";
+  }
+  if (total <= 10000) {
+    return "You're fulfilling your true purpose in life. Being my toy. My slave. My snack.";
+  }
+  return "Serving my hedonistic, self-indulgent whims while knowing you'll one day be devoured and succumb to your grisly fate within my all-consuming stomach, huh? Keep it up, payslave.";
+}
+
+function setTextWithEmphasis(element, text) {
+  element.textContent = "";
+  const emphasisPattern = /\*([^*]+)\*/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = emphasisPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      element.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+    const emphasis = document.createElement("em");
+    emphasis.textContent = match[1];
+    element.appendChild(emphasis);
+    lastIndex = emphasisPattern.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    element.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+}
+
+function renderAccountSummary() {
+  const summary = document.getElementById("accountSummary");
+  if (!currentRoomCode) {
+    summary.style.display = "none";
+    return;
+  }
+
+  summary.style.display = "block";
+  document.getElementById("accountUsername").textContent = sessionAccountUsername
+    ? `Tribute history for ${sessionAccountUsername}`
+    : "Loading tribute account…";
+  document.getElementById("accountTotal").textContent =
+    `Total tributed in ended sessions: $${accountTotalAmount.toFixed(2)}`;
+  setTextWithEmphasis(
+    document.getElementById("accountMessage"),
+    getAccountTierMessage(accountTotalAmount)
+  );
+}
+
+function setAccountUsername(name) {
+  const normalizedName = normalizeUsername(name);
+  if (!normalizedName) return;
+
+  const key = getUsernameAccountKey(normalizedName);
+  sessionAccountUsername = normalizedName;
+  if (sessionAccountKey === key && accountSessionsRef) {
+    renderAccountSummary();
+    recordEndedSession();
+    return;
+  }
+
+  if (accountSessionsRef) accountSessionsRef.off();
+  sessionAccountKey = key;
+  accountTotalAmount = 0;
+  accountSessionsRef = db.ref(`tributeAccounts/${key}/sessions`);
+  renderAccountSummary();
+
+  accountSessionsRef.on("value", (snapshot) => {
+    const sessions = snapshot.val() || {};
+    let total = 0;
+    Object.values(sessions).forEach((entry) => {
+      const amount = typeof entry === "number" ? entry : Number(entry && entry.amount);
+      if (Number.isFinite(amount) && amount > 0) total += amount;
+    });
+    accountTotalAmount = Math.round((total + Number.EPSILON) * 100) / 100;
+    renderAccountSummary();
+  }, (error) => {
+    console.error("Could not load tribute history:", error);
+    setStatus("Could not load this username's tribute history. Check Firebase database permissions.");
+  });
+
+  recordEndedSession();
+}
+
+function recordEndedSession() {
+  // The historical total only includes completed sessions. Both participants
+  // may attempt the write, but a transaction at this room's account entry makes
+  // the same session count only once.
+  if (!currentRoomCode || !startTime || !endTime || !sessionAccountUsername || !accountSessionsRef) return;
+
+  const amount = Number(getFinalAmount());
+  if (!Number.isFinite(amount) || amount < 0) return;
+
+  const entry = {
+    amount: Math.round(amount * 100) / 100,
+    username: sessionAccountUsername,
+    roomCode: String(currentRoomCode),
+    endedAt: Number(endTime)
+  };
+  accountSessionsRef.child(String(currentRoomCode)).transaction((current) => current || entry)
+    .catch((error) => {
+      console.error("Could not record ended session for tribute history:", error);
+      setStatus("Session ended, but its tribute total could not be saved. Check Firebase database permissions.");
+    });
 }
 
 function updateDisplay() {
@@ -412,6 +588,7 @@ function showEndedState() {
   updateDisplay();
   stopBubbles();
   setStatus("Session ended");
+  recordEndedSession();
 
   // The joiner controls resetting the shared session. The reset event is
   // written to Firebase so both participants return to the main menu together.
@@ -437,6 +614,8 @@ function returnToMainMenu() {
   if (startTimeRef) startTimeRef.off();
   if (endTimeRef) endTimeRef.off();
   if (resetRef) resetRef.off();
+  if (initiatorNameRef) initiatorNameRef.off();
+  if (accountSessionsRef) accountSessionsRef.off();
   if (roomRef) roomRef.off();
 
   if (timerInterval) {
@@ -468,6 +647,11 @@ function returnToMainMenu() {
   startTimeRef = null;
   endTimeRef = null;
   resetRef = null;
+  initiatorNameRef = null;
+  accountSessionsRef = null;
+  sessionAccountUsername = "";
+  sessionAccountKey = "";
+  accountTotalAmount = 0;
   messagesQuery = null;
   isInitiator = false;
 
@@ -480,6 +664,10 @@ function returnToMainMenu() {
   document.getElementById("endButtonContainer").innerHTML = "";
   document.getElementById("roomDisplay").style.display = "none";
   document.getElementById("chatBox").style.display = "none";
+  document.getElementById("accountSummary").style.display = "none";
+  document.getElementById("accountUsername").textContent = "Tribute history";
+  document.getElementById("accountTotal").textContent = "Total tributed in ended sessions: $0.00";
+  document.getElementById("accountMessage").textContent = "";
   document.getElementById("paymentButtons").style.display = "none";
   document.getElementById("endSection").style.display = "none";
   document.getElementById("controls").style.display = "block";
@@ -556,11 +744,14 @@ function stopBubbles() {
   document.getElementById("bubbles").innerHTML = "";
 }
 
-function addMessage(text, isSelf) {
+function addMessage(text, isSelf, senderName) {
   const messages = document.getElementById("messages");
   const div = document.createElement("div");
   div.className = isSelf ? "msg-self" : "msg-other";
-  div.textContent = text;
+  const senderLabel = document.createElement("strong");
+  senderLabel.textContent = `${senderName || "Unknown"}: `;
+  div.appendChild(senderLabel);
+  div.appendChild(document.createTextNode(text));
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
 }
@@ -570,6 +761,13 @@ function startChat(roomCode) {
   if (messagesQuery) messagesQuery.off();
   if (startTimeRef) startTimeRef.off();
   if (endTimeRef) endTimeRef.off();
+  if (resetRef) resetRef.off();
+  if (initiatorNameRef) initiatorNameRef.off();
+  if (accountSessionsRef) accountSessionsRef.off();
+  accountSessionsRef = null;
+  sessionAccountKey = "";
+  sessionAccountUsername = "";
+  accountTotalAmount = 0;
   if (timerInterval) {
     clearInterval(timerInterval);
     timerInterval = null;
@@ -585,7 +783,32 @@ function startChat(roomCode) {
   startTimeRef = roomRef.child("startTime");
   endTimeRef = roomRef.child("endTime");
   resetRef = roomRef.child("resetAt");
+  initiatorNameRef = roomRef.child("initiatorName");
   messagesQuery = messagesRef.orderByChild("timestamp");
+
+  // Show the account below the chat immediately, including the user's first session.
+  document.getElementById("accountSummary").style.display = "block";
+  accountTotalAmount = 0;
+  renderAccountSummary();
+  if (isInitiator && initiatorName) {
+    setAccountUsername(initiatorName);
+    // Populate the room metadata for the joiner; don't overwrite a saved name.
+    initiatorNameRef.transaction((current) => current || initiatorName).catch((error) => {
+      console.error("Could not save the initiator username to the room:", error);
+    });
+  }
+  initiatorNameRef.on("value", (snapshot) => {
+    const storedName = normalizeUsername(snapshot.val());
+    if (storedName) {
+      if (!isInitiator || !initiatorName) initiatorName = storedName;
+      setAccountUsername(storedName);
+    } else if (isInitiator && initiatorName) {
+      setAccountUsername(initiatorName);
+      initiatorNameRef.transaction((current) => current || initiatorName).catch((error) => {
+        console.error("Could not save the initiator username to the room:", error);
+      });
+    }
+  });
 
   document.getElementById("roomCode").textContent = currentRoomCode;
   document.getElementById("roomDisplay").style.display = "block";
@@ -598,7 +821,8 @@ function startChat(roomCode) {
   messagesQuery.on("child_added", (snapshot) => {
     const msg = snapshot.val();
     if (!msg || typeof msg.text !== "string") return;
-    addMessage(msg.text, msg.sender === myName);
+    const senderName = typeof msg.sender === "string" && msg.sender.trim() ? msg.sender.trim() : "Unknown";
+    addMessage(msg.text, senderName === myName, senderName);
   });
 
   startTimeRef.on("value", (snap) => {
@@ -608,6 +832,7 @@ function startChat(roomCode) {
     if (endTime) {
       updateDisplay();
       showEndedState();
+      recordEndedSession();
     } else {
       setStatus("Session started");
       startLoop();
@@ -620,6 +845,7 @@ function startChat(roomCode) {
     if (Number.isFinite(val) && val > 0) {
       endTime = val;
       showEndedState();
+      recordEndedSession();
     }
   });
 
@@ -661,7 +887,7 @@ emailjs.init(EMAILJS_PUBLIC_KEY);
 
 function initiateSession() {
   const nameInput = document.getElementById("initiatorNameInput");
-  const enteredName = nameInput.value.trim().replace(/\\s+/g, " ");
+  const enteredName = nameInput.value.trim().replace(/\s+/g, " ");
   if (!enteredName) {
     setStatus("Please enter your username first.");
     nameInput.focus();
@@ -857,6 +1083,7 @@ async function refreshRoomState() {
 
     if (endTime) {
       showEndedState();
+      recordEndedSession();
     } else if (startTime) {
       setStatus("Session started");
       startLoop();
