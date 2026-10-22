@@ -385,7 +385,7 @@
     <div id="accountUsername">Tribute history</div>
     <div id="accountTotal">Lifetime tribute total: $0.00</div>
     <div id="accountMessage"></div>
-    <div id="accountNote">Completed sessions and confirmed extra tributes count toward this total.</div>
+    <div id="accountNote">Completed sessions and confirmed extra tributes count toward your lifetime total.</div>
   </div>
 
   <section id="extraTributeSection" aria-live="polite">
@@ -401,7 +401,7 @@
         <a href="https://throne.com/fhyrajackal" target="_blank" rel="noopener"><button type="button" class="throne-btn">Pay with Throne</button></a>
       </div>
       <button type="button" id="confirmExtraTributeButton" style="display:none">Confirm tribute</button>
-      <div id="extraTributeNote">Confirm only after sending the displayed amount. This confirmation is not independently verified by PayPal or Throne.</div>
+      <div id="extraTributeNote">The tribute will be confirmed only after being sent the displayed amount.</div>
     </div>
   </section>
 
@@ -682,8 +682,8 @@ function finishExtraTributeSpin(state) {
   amountElement.textContent = `$${Number(state.amount).toFixed(2)}`;
   document.getElementById("extraTributeHeading").textContent = isInitiator ? "Your extra tribute amount" : "Extra tribute amount";
   document.getElementById("extraTributeStatus").textContent = isInitiator
-    ? "The payment options are ready. The joiner can confirm after sending this amount."
-    : "Send the displayed amount, then confirm the tribute below.";
+    ? "Payment ready. Fhyra will confirm your devoted send."
+    : "Once sent the displayed amount, then confirm the tribute below.";
   if (!isInitiator) document.getElementById("extraTributeJoinerLabel").textContent = `Extra tribute: $${Number(state.amount).toFixed(2)}`;
 
   document.getElementById("extraTributePaymentButtons").style.display = isInitiator ? "block" : "none";
