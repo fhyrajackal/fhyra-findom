@@ -401,7 +401,7 @@
         <a href="https://throne.com/fhyrajackal" target="_blank" rel="noopener"><button type="button" class="throne-btn">Pay with Throne</button></a>
       </div>
       <button type="button" id="confirmExtraTributeButton" style="display:none">Confirm tribute</button>
-      <div id="extraTributeNote">The tribute will be confirmed only after being sent the displayed amount.</div>
+      <div id="extraTributeNote">The tribute will be added to the lifetime total only after being sent the displayed amount.</div>
     </div>
   </section>
 
@@ -684,7 +684,6 @@ function finishExtraTributeSpin(state) {
   document.getElementById("extraTributeStatus").textContent = isInitiator
     ? "Payment ready. Fhyra will confirm your devoted send."
     : "Once sent the displayed amount, then confirm the tribute below.";
-  if (!isInitiator) document.getElementById("extraTributeJoinerLabel").textContent = `Extra tribute: $${Number(state.amount).toFixed(2)}`;
 
   document.getElementById("extraTributePaymentButtons").style.display = isInitiator ? "block" : "none";
   document.getElementById("confirmExtraTributeButton").style.display = isInitiator ? "none" : "inline-block";
@@ -784,8 +783,7 @@ function renderExtraTributePanel() {
 
   startButton.style.display = "none";
   startHint.style.display = "none";
-  joinerLabel.style.display = isInitiator ? "none" : "block";
-  joinerLabel.textContent = `Extra tribute: $${amount.toFixed(2)}`;
+  joinerLabel.style.display = "none";
   draw.style.display = "block";
   if (getServerNow() < Number(state.createdAt) + EXTRA_TRIBUTE_SPIN_DURATION_MS) {
     startExtraTributeSpin(state);
