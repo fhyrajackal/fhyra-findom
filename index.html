@@ -482,7 +482,7 @@ function renderAccountSummary() {
     ? `Tribute history for ${sessionAccountUsername}`
     : "Loading tribute account…";
   document.getElementById("accountTotal").textContent =
-    `Total tributed in ended sessions: $${accountTotalAmount.toFixed(2)}`;
+    `Total tributed: $${accountTotalAmount.toFixed(2)}`;
   setTextWithEmphasis(
     document.getElementById("accountMessage"),
     getAccountTierMessage(accountTotalAmount)
@@ -666,7 +666,7 @@ function returnToMainMenu() {
   document.getElementById("chatBox").style.display = "none";
   document.getElementById("accountSummary").style.display = "none";
   document.getElementById("accountUsername").textContent = "Tribute history";
-  document.getElementById("accountTotal").textContent = "Total tributed in ended sessions: $0.00";
+  document.getElementById("accountTotal").textContent = "Total tributed: $0.00";
   document.getElementById("accountMessage").textContent = "";
   document.getElementById("paymentButtons").style.display = "none";
   document.getElementById("endSection").style.display = "none";
