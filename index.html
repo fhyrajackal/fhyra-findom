@@ -383,7 +383,8 @@
   </div>
 
   <section id="extraTributeSection" aria-live="polite">
-    <button type="button" id="extraTributeStartButton">Extra tribute</button>
+    <button type="button" id="extraTributeStartButton">Show real gratitude, paypup</button>
+    <div id="extraTributeJoinerLabel" style="display:none; color:#ffc2ce; margin-bottom:0.5rem;">Extra tribute</div>
     <div id="extraTributeDraw">
       <div id="extraTributeHeading">Your extra tribute amount</div>
       <div id="extraTributeAmount">$25.00</div>
@@ -672,9 +673,11 @@ function finishExtraTributeSpin(state) {
   const amountElement = document.getElementById("extraTributeAmount");
   amountElement.classList.remove("spinning");
   amountElement.textContent = `$${Number(state.amount).toFixed(2)}`;
+  document.getElementById("extraTributeHeading").textContent = isInitiator ? "Your extra tribute amount" : "Extra tribute amount";
   document.getElementById("extraTributeStatus").textContent = isInitiator
     ? "The payment options are ready. The joiner can confirm after sending this amount."
     : "Send the displayed amount, then confirm the tribute below.";
+  if (!isInitiator) document.getElementById("extraTributeJoinerLabel").textContent = `Extra tribute: $${Number(state.amount).toFixed(2)}`;
 
   document.getElementById("extraTributePaymentButtons").style.display = isInitiator ? "block" : "none";
   document.getElementById("confirmExtraTributeButton").style.display = isInitiator ? "none" : "inline-block";
@@ -688,12 +691,23 @@ function startExtraTributeSpin(state) {
   activeExtraTributeSpinId = state.id;
 
   const amountElement = document.getElementById("extraTributeAmount");
-  amountElement.classList.add("spinning");
-  document.getElementById("extraTributeStatus").textContent = "Rolling for an amount…";
+  const finishAt = Number(state.createdAt) + EXTRA_TRIBUTE_SPIN_DURATION_MS;
   document.getElementById("extraTributePaymentButtons").style.display = "none";
   document.getElementById("confirmExtraTributeButton").style.display = "none";
+  if (!isInitiator) {
+    amountElement.classList.remove("spinning");
+    amountElement.textContent = `$${Number(state.amount).toFixed(2)}`;
+    document.getElementById("extraTributeHeading").textContent = "Extra tribute amount";
+    document.getElementById("extraTributeStatus").textContent = "The initiator is drawing the amount…";
+    extraTributeSpinTimer = setTimeout(() => {
+      if (extraTributeState && extraTributeState.id === state.id && extraTributeState.status === "pending") finishExtraTributeSpin(state);
+    }, Math.max(0, finishAt - getServerNow()));
+    return;
+  }
+  document.getElementById("extraTributeHeading").textContent = "Your extra tribute amount";
+  amountElement.classList.add("spinning");
+  document.getElementById("extraTributeStatus").textContent = "Rolling for an amount…";
 
-  const finishAt = Number(state.createdAt) + EXTRA_TRIBUTE_SPIN_DURATION_MS;
   const tick = () => {
     if (!extraTributeState || extraTributeState.id !== state.id || extraTributeState.status !== "pending") return;
 
@@ -722,19 +736,24 @@ function renderExtraTributePanel() {
   }
 
   section.style.display = "block";
-  startButton.textContent = isInitiator ? "Show real gratitude, paypup" : "Extra tribute";
+  const joinerLabel = document.getElementById("extraTributeJoinerLabel");
+  startButton.textContent = "Show real gratitude, paypup";
+  startButton.style.display = isInitiator ? "inline-block" : "none";
+  joinerLabel.style.display = isInitiator ? "none" : "block";
   const state = extraTributeState;
 
   if (!state || state.status === "confirmed") {
     clearExtraTributeSpinTimer();
     activeExtraTributeSpinId = null;
-    startButton.style.display = "inline-block";
+    startButton.style.display = isInitiator ? "inline-block" : "none";
+    joinerLabel.style.display = isInitiator ? "none" : "block";
     draw.style.display = "none";
     return;
   }
 
   if (state.status !== "pending") {
-    startButton.style.display = "inline-block";
+    startButton.style.display = isInitiator ? "inline-block" : "none";
+    joinerLabel.style.display = isInitiator ? "none" : "block";
     draw.style.display = "none";
     return;
   }
@@ -742,12 +761,15 @@ function renderExtraTributePanel() {
   const amount = Number(state.amount);
   if (!state.id || !Number.isFinite(amount) || amount < 25 || amount > 250 || amount % 5 !== 0 ||
       !Number.isFinite(Number(state.createdAt)) || Number(state.createdAt) <= 0) {
-    startButton.style.display = "inline-block";
+    startButton.style.display = isInitiator ? "inline-block" : "none";
+    joinerLabel.style.display = isInitiator ? "none" : "block";
     draw.style.display = "none";
     return;
   }
 
   startButton.style.display = "none";
+  joinerLabel.style.display = isInitiator ? "none" : "block";
+  joinerLabel.textContent = `Extra tribute: $${amount.toFixed(2)}`;
   draw.style.display = "block";
   if (getServerNow() < Number(state.createdAt) + EXTRA_TRIBUTE_SPIN_DURATION_MS) {
     startExtraTributeSpin(state);
@@ -955,6 +977,8 @@ function returnToMainMenu() {
   document.getElementById("extraTributeSection").style.display = "none";
   document.getElementById("extraTributeDraw").style.display = "none";
   document.getElementById("extraTributeStartButton").style.display = "inline-block";
+  document.getElementById("extraTributeJoinerLabel").style.display = "none";
+  document.getElementById("extraTributeJoinerLabel").textContent = "Extra tribute";
   document.getElementById("extraTributePaymentButtons").style.display = "none";
   document.getElementById("confirmExtraTributeButton").style.display = "none";
   document.getElementById("accountUsername").textContent = "Tribute history";
