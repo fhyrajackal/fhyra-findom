@@ -298,7 +298,7 @@
     <input type="text" id="initiatorNameInput" placeholder="Your username" maxlength="40" autocomplete="nickname" aria-label="Your username" />
     <button onclick="initiateSession()">Initiate Session</button>
     <div style="margin: 0.7rem 0; color: #b07080;">or</div>
-    <input type="text" id="roomInput" placeholder="Enter room code" inputmode="numeric" autocomplete="off" />
+    <input type="text" id="roomInput" placeholder="Enter room code" autocapitalize="characters" autocomplete="off" />
     <button onclick="joinSession()">Join Session</button>
   </div>
 
@@ -330,12 +330,14 @@
 
   <div id="accountSummary" aria-live="polite">
     <div id="accountUsername">Tribute history</div>
-    <div id="accountTotal">Total tributed: $0.00</div>
+    <div id="accountTotal">Total tributed in ended sessions: $0.00</div>
     <div id="accountMessage"></div>
     <div id="accountNote">Only completed sessions count toward this total.</div>
   </div>
 
 <script>
+// Client-side guardrails help prevent accidental misuse, but cannot enforce security by themselves.
+// Use Firebase Authentication + restrictive Realtime Database rules and server-side validation.
 // ====== PASTE YOUR FIREBASE CONFIG HERE ======
 const firebaseConfig = {
   apiKey: "AIzaSyAd6FDdxOKZveL4xN0TxuuVrdLG-ePtP30",
@@ -392,6 +394,18 @@ let messagesQuery = null;
 const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
 
 const RATE_PER_MINUTE = 3;
+const ROOM_CODE_PATTERN = /^(?:\d{13}|[a-f0-9]{32})$/i; // legacy rooms + new unguessable rooms
+
+function generateRoomCode() {
+  // New invite codes have 128 bits of randomness. HTTPS hosting (e.g. GitHub Pages)
+  // provides crypto.getRandomValues; do not fall back to predictable timestamps.
+  if (!window.crypto || typeof window.crypto.getRandomValues !== "function") {
+    throw new Error("Secure random generation is unavailable. Open the site over HTTPS.");
+  }
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
 
 function setStatus(msg) {
   document.getElementById("status").textContent = msg || "";
@@ -417,7 +431,7 @@ function getFinalAmount() {
 }
 
 function normalizeUsername(name) {
-  return String(name || "").trim().replace(/\s+/g, " ").slice(0, 40);
+  return String(name || "").replace(/[\u0000-\u001F\u007F]/g, "").trim().replace(/\s+/g, " ").slice(0, 40);
 }
 
 // Use a lowercase UTF-8 hex key so every valid username maps to a safe,
@@ -482,7 +496,7 @@ function renderAccountSummary() {
     ? `Tribute history for ${sessionAccountUsername}`
     : "Loading tribute account…";
   document.getElementById("accountTotal").textContent =
-    `Total tributed: $${accountTotalAmount.toFixed(2)}`;
+    `Total tributed in ended sessions: $${accountTotalAmount.toFixed(2)}`;
   setTextWithEmphasis(
     document.getElementById("accountMessage"),
     getAccountTierMessage(accountTotalAmount)
@@ -570,7 +584,7 @@ function saveActiveSession(code, role, username = "") {
 function readActiveSession() {
   try {
     const saved = JSON.parse(localStorage.getItem(ACTIVE_SESSION_KEY) || "null");
-    if (saved && /^\d+$/.test(String(saved.code)) && ["initiator", "joiner"].includes(saved.role)) {
+    if (saved && ROOM_CODE_PATTERN.test(String(saved.code)) && ["initiator", "joiner"].includes(saved.role)) {
       return { code: String(saved.code), role: saved.role, username: typeof saved.username === "string" ? saved.username : "" };
     }
   } catch (error) {
@@ -604,6 +618,8 @@ function showEndedState() {
     document.getElementById("paymentButtons").style.display = "none";
   }
   document.getElementById("endButtonContainer").innerHTML = "";
+  document.getElementById("chatInput").disabled = true;
+  document.getElementById("sendBtn").disabled = true;
 }
 
 function returnToMainMenu() {
@@ -660,13 +676,15 @@ function returnToMainMenu() {
   document.getElementById("roomCode").textContent = "";
   document.getElementById("roomInput").value = "";
   document.getElementById("chatInput").value = "";
+  document.getElementById("chatInput").disabled = false;
+  document.getElementById("sendBtn").disabled = false;
   document.getElementById("messages").innerHTML = "";
   document.getElementById("endButtonContainer").innerHTML = "";
   document.getElementById("roomDisplay").style.display = "none";
   document.getElementById("chatBox").style.display = "none";
   document.getElementById("accountSummary").style.display = "none";
   document.getElementById("accountUsername").textContent = "Tribute history";
-  document.getElementById("accountTotal").textContent = "Total tributed: $0.00";
+  document.getElementById("accountTotal").textContent = "Total tributed in ended sessions: $0.00";
   document.getElementById("accountMessage").textContent = "";
   document.getElementById("paymentButtons").style.display = "none";
   document.getElementById("endSection").style.display = "none";
@@ -817,6 +835,8 @@ function startChat(roomCode) {
   document.getElementById("paymentButtons").style.display = "none";
   document.getElementById("endSection").style.display = "none";
   document.getElementById("chatBox").style.display = "block";
+  document.getElementById("chatInput").disabled = false;
+  document.getElementById("sendBtn").disabled = false;
 
   messagesQuery.on("child_added", (snapshot) => {
     const msg = snapshot.val();
@@ -861,14 +881,20 @@ function sendMessage() {
   const input = document.getElementById("chatInput");
   const text = input.value.trim();
   if (!text || !messagesRef) return;
-
+  if (endTime) {
+    setStatus("The session has ended, so the chat is read-only.");
+    return;
+  }
   messagesRef.push({
     text: text,
     sender: myName,
-    timestamp: Date.now()
+    timestamp: getServerNow()
+  }).then(() => {
+    input.value = "";
+  }).catch((error) => {
+    console.error("Could not send chat message:", error);
+    setStatus("Message could not be sent. Check your connection or database permissions.");
   });
-
-  input.value = "";
 }
 
 document.getElementById("chatInput").addEventListener("keypress", (e) => {
@@ -885,98 +911,138 @@ const JOIN_BASE_URL = "https://fhyrajackal.github.io/fhyra-findom";
 
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
-function initiateSession() {
+async function initiateSession() {
   const nameInput = document.getElementById("initiatorNameInput");
-  const enteredName = nameInput.value.trim().replace(/\s+/g, " ");
+  const enteredName = normalizeUsername(nameInput.value);
   if (!enteredName) {
     setStatus("Please enter your username first.");
     nameInput.focus();
     return;
   }
 
-  initiatorName = enteredName.slice(0, 40);
+  initiatorName = enteredName;
+  nameInput.value = initiatorName;
   isInitiator = true;
-  const code = Date.now().toString();
+  let code;
+  try {
+    code = generateRoomCode();
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || "Could not generate a secure room code.");
+    return;
+  }
+
+  // Create the room metadata before sending the invite, so the joiner never
+  // receives a link before the room exists in the database.
+  setStatus("Creating session…");
+  try {
+    await db.ref("rooms/" + code + "/initiatorName").set(initiatorName);
+  } catch (error) {
+    console.error("Could not create the room:", error);
+    setStatus("Could not create the session. Check Firebase database permissions.");
+    return;
+  }
+
   saveActiveSession(code, "initiator", initiatorName);
   document.getElementById("roomCode").textContent = code;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
-
   setStatus("Waiting for joiner…");
   startChat(code);
 
-  // Build a direct join link
   const joinLink = JOIN_BASE_URL + "/?start=" + encodeURIComponent(code);
-
-  // Send the email
   setStatus("Sending join email…");
-  emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-    to_email: "hanychlaura@gmail.com",
-    join_link: joinLink,
-    room_code: code,
-    initiator_username: initiatorName
-  }).then(() => {
-    setStatus("Join email sent — waiting for Fhyra to ruin you~");
-  }).catch((err) => {
+  try {
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: "hanychlaura@gmail.com",
+      join_link: joinLink,
+      room_code: code,
+      initiator_username: initiatorName
+    });
+    setStatus("Join email sent — waiting for Fhyra to join.");
+  } catch (err) {
     console.error("Email failed:", err);
-    setStatus("Email failed — share the room code manually");
-  });
-
+    setStatus("Session created, but the email failed. Share the room code manually.");
+  }
 }
 
-function joinRoomByCode(code) {
-  isInitiator = false;
-  initiatorName = "";
-  code = String(code);
-  saveActiveSession(code, "joiner");
+async function joinRoomByCode(code) {
+  code = String(code || "").trim().toLowerCase();
+  if (!ROOM_CODE_PATTERN.test(code)) {
+    setStatus("That room code is invalid. Check the code and try again.");
+    return;
+  }
 
-  document.getElementById("roomCode").textContent = code;
-  document.getElementById("roomDisplay").style.display = "block";
-  document.getElementById("controls").style.display = "none";
-
-  setStatus("Joining room…");
-
+  setStatus("Checking room code…");
   const room = db.ref("rooms/" + code);
 
-  db.ref(".info/serverTimeOffset").once("value").then((offsetSnapshot) => {
+  try {
+    // Check the room's existing owner metadata before touching startTime.
+    // This prevents a mistyped/nonexistent code from accidentally creating a room.
+    const ownerSnapshot = await room.child("initiatorName").once("value");
+    const ownerName = normalizeUsername(ownerSnapshot.val());
+    if (!ownerName) {
+      throw new Error("No session exists for that room code. Check the code or ask for a new invite.");
+    }
+
+    const offsetSnapshot = await db.ref(".info/serverTimeOffset").once("value");
     serverTimeOffset = Number(offsetSnapshot.val()) || serverTimeOffset;
-    return room.child("startTime").transaction(
-      (current) => current || getServerNow(),
-      (error, committed, snapshot) => {
-        if (error) {
-          console.error("Failed to join room:", error);
-          setStatus("Error joining: " + error.message);
-          return;
-        }
 
-        if (!snapshot.exists() || !snapshot.val()) {
-          setStatus("Could not obtain session start time.");
-          return;
-        }
-
-        setStatus(
-          committed
-            ? "Joined — session started"
-            : "Joined existing session"
-        );
-
-        // Both manual-code and emailed-link joins initialize the same listeners.
-        startChat(code);
-        document.getElementById("endButtonContainer").innerHTML =
-          '<button class="end-btn" onclick="endSession()">End Session</button>';
-      }
+    const transactionResult = await room.child("startTime").transaction(
+      (current) => current || getServerNow()
     );
-  }).catch((error) => {
-    console.error("Failed to get Firebase server time:", error);
-    setStatus("Could not connect to Firebase. Check your connection and retry.");
-  });
+    if (!transactionResult.snapshot.exists() || !transactionResult.snapshot.val()) {
+      throw new Error("Could not obtain session start time.");
+    }
+
+    // Only mark the visitor as joined after existence and start-time checks succeed.
+    isInitiator = false;
+    initiatorName = ownerName;
+    saveActiveSession(code, "joiner");
+    document.getElementById("roomCode").textContent = code;
+    document.getElementById("roomDisplay").style.display = "block";
+    document.getElementById("controls").style.display = "none";
+    setStatus(transactionResult.committed ? "Joined — session started" : "Joined existing session");
+
+    startChat(code);
+    document.getElementById("endButtonContainer").innerHTML =
+      '<button class="end-btn" onclick="endSession()">End Session</button>';
+  } catch (error) {
+    console.error("Failed to join room:", error);
+    // A failed link/code check should leave the menu available for a retry.
+    document.getElementById("controls").style.display = "block";
+    document.getElementById("roomDisplay").style.display = "none";
+    document.getElementById("chatBox").style.display = "none";
+    document.getElementById("accountSummary").style.display = "none";
+    document.getElementById("endSection").style.display = "none";
+    document.getElementById("paymentButtons").style.display = "none";
+    try {
+      const saved = JSON.parse(localStorage.getItem(ACTIVE_SESSION_KEY) || "null");
+      if (saved && String(saved.code).toLowerCase() === code) {
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+      }
+    } catch (_) {}
+
+    if (window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("start")) {
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      }
+    }
+
+    setStatus(error && error.message && error.message.startsWith("No session exists")
+      ? error.message
+      : (error && error.message === "Could not obtain session start time."
+          ? error.message
+          : "Could not join the session. Check the room code, connection, and database permissions."));
+  }
 }
 
 function joinSession() {
   const code = document.getElementById("roomInput").value.trim();
 
-  if (!/^\d+$/.test(code)) {
-    alert("Please enter a valid room code");
+  if (!ROOM_CODE_PATTERN.test(code)) {
+    setStatus("Please enter a valid room code (13 digits for an older session, or a 32-character invite code).");
     return;
   }
 
@@ -1051,7 +1117,10 @@ function restoreSavedSession() {
   isInitiator = saved.role === "initiator";
   initiatorName = isInitiator ? (saved.username || "") : "";
   const nameInput = document.getElementById("initiatorNameInput");
-  if (nameInput && isInitiator && initiatorName) nameInput.value = initiatorName;
+  if (nameInput && isInitiator && initiatorName) {
+    initiatorName = normalizeUsername(initiatorName);
+    nameInput.value = initiatorName;
+  }
   document.getElementById("roomCode").textContent = saved.code;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
@@ -1108,7 +1177,7 @@ window.addEventListener("load", () => {
   const params = new URLSearchParams(window.location.search);
   const startParam = params.get("start");
 
-  if (startParam && /^\d+$/.test(startParam)) {
+  if (startParam) {
     joinRoomByCode(startParam);
     return;
   }
