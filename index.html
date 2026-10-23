@@ -329,6 +329,39 @@
     font-size: 0.78rem;
   }
   #extraTributePaymentButtons { display: none; }
+
+  /* Keep room controls compact so the chat gets more screen space. */
+  .room, .end-section {
+    max-width: 340px;
+    margin-top: 0.55rem;
+    font-size: 0.92rem;
+    line-height: 1.3;
+  }
+  .room span, .end-section span {
+    padding: 0.25rem 0.55rem;
+    margin: 0.15rem 0;
+    font-size: 0.9rem;
+    border-radius: 7px;
+  }
+  .room p {
+    margin: 0.35rem 0 !important;
+    font-size: 0.82rem !important;
+  }
+  .room button, .end-section button {
+    width: min(100%, 180px);
+    min-height: 38px;
+    padding: 0.55rem 0.9rem;
+    margin: 0.15rem;
+    border-radius: 9px;
+    font-size: 0.9rem;
+  }
+  #chatBox {
+    margin-top: 0.65rem;
+    padding: 0.65rem;
+  }
+  #messages {
+    height: clamp(260px, 40vh, 420px);
+  }
 </style>
 </head>
 <body>
