@@ -1212,30 +1212,38 @@ async function confirmSessionPayment() {
       confirmedBy: myName || "Fhyra"
     };
 
-    // Use a room-level transaction so a concurrent reset wins if it happens first;
-    // once payment confirmation commits, a later reset keeps that confirmed payment.
-    const result = await roomRef.transaction((currentRoom) => {
-      if (!currentRoom || Number(currentRoom.resetAt) > 0 || !Number(currentRoom.endTime)) return;
-      if (currentRoom.sessionPayment && currentRoom.sessionPayment.status === "confirmed") return;
-      currentRoom.sessionPayment = confirmation;
-      return currentRoom;
+    // Read the two prerequisites directly, then transact only on the payment
+    // child. A transaction on the entire room can be rejected by Firebase rules
+    // that allow writes to individual room fields but not the room root.
+    const [resetSnapshot, endSnapshot] = await Promise.all([
+      resetRef.once("value"),
+      endTimeRef.once("value")
+    ]);
+    if (Number(resetSnapshot.val()) > 0) {
+      throw new Error("This session has already been reset, so payment cannot be confirmed.");
+    }
+    if (!(Number(endSnapshot.val()) > 0)) {
+      throw new Error("The session end time was not saved yet. Wait a moment and try again.");
+    }
+
+    const result = await sessionPaymentRef.transaction((currentPayment) => {
+      if (currentPayment && currentPayment.status === "confirmed") return;
+      return confirmation;
     });
 
     if (!result.committed) {
-      const currentRoom = result.snapshot.val() || {};
-      sessionPaymentState = currentRoom.sessionPayment || null;
-      if (Number(currentRoom.resetAt) > 0) {
-        setStatus("This session has already been reset, so payment cannot be confirmed.");
-      } else if (sessionPaymentState && sessionPaymentState.status === "confirmed") {
+      sessionPaymentState = result.snapshot.val() || null;
+      if (sessionPaymentState && sessionPaymentState.status === "confirmed") {
+        // It was already confirmed on this or the other device; do not count it twice.
+        await recordConfirmedSessionPayment(sessionPaymentState);
+        updateSessionPaymentUI();
         setStatus("This session payment has already been confirmed.");
-      } else {
-        throw new Error("Payment was not confirmed. Please try again.");
+        return;
       }
-      updateSessionPaymentUI();
-      return;
+      throw new Error("Firebase did not save the payment confirmation. Check database write permissions.");
     }
 
-    sessionPaymentState = result.snapshot.val().sessionPayment || confirmation;
+    sessionPaymentState = result.snapshot.val() || confirmation;
     await recordConfirmedSessionPayment(sessionPaymentState);
     updateSessionPaymentUI();
 
@@ -1920,25 +1928,22 @@ async function resetSessionForBoth() {
   localResetInProgress = true;
   setStatus("Resetting session for both participants…");
   try {
-    // This uses the same room-level transaction as payment confirmation. If reset
-    // commits first, payment confirmation will be rejected; confirmed payments
-    // remain counted if the session is reset afterward.
-    const result = await roomRef.transaction((currentRoom) => {
-      if (!currentRoom) return;
-      if (Number(currentRoom.resetAt) > 0) return;
-      currentRoom.resetAt = getServerNow();
-      return currentRoom;
+    // Write only the resetAt child instead of transacting on the whole room.
+    // This works with Firebase rules that permit individual-field writes.
+    const result = await resetRef.transaction((currentResetAt) => {
+      if (Number(currentResetAt) > 0) return;
+      return getServerNow();
     });
-    if (!result.committed && Number(result.snapshot.val() && result.snapshot.val().resetAt) <= 0) {
-      throw new Error("The reset could not be saved.");
+    if (!result.committed && !(Number(result.snapshot.val()) > 0)) {
+      throw new Error("Firebase did not save the reset. Check database write permissions.");
     }
-    // The initiator's reset listener will return their device to the main menu.
+    // The shared reset listener returns both devices to the main menu.
     localResetInProgress = false;
     returnToMainMenu();
   } catch (error) {
     localResetInProgress = false;
     console.error("Could not reset session:", error);
-    setStatus("Could not reset session. Check your connection and try again.");
+    setStatus(error && error.message ? error.message : "Could not reset session. Check your connection and try again.");
   }
 }
 
