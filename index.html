@@ -430,6 +430,10 @@
   <div class="end-section" id="endSection" style="display:none;">
     <div>Session Ended</div>
     <div id="resetSessionContainer"></div>
+    <div id="sessionPaymentContainer" style="display:none; margin-top:0.35rem;">
+      <button type="button" id="confirmSessionPaymentButton">Confirm Payment</button>
+      <div id="sessionPaymentMessage" aria-live="polite" style="color:#b07080; font-size:0.85rem; margin-top:0.3rem;"></div>
+    </div>
   </div>
 
   <div class="payment-buttons" id="paymentButtons">
@@ -449,7 +453,7 @@
     <div id="accountUsername">Tribute history</div>
     <div id="accountTotal">Lifetime tribute total: $0.00</div>
     <div id="accountMessage"></div>
-    <div id="accountNote">Completed sessions and confirmed extra tributes count toward your lifetime total.</div>
+    <div id="accountNote">Confirmed session payments and confirmed extra tributes count toward your lifetime total.</div>
   </div>
 
   <section id="extraTributeSection" aria-live="polite">
@@ -533,6 +537,10 @@ let extraTributeSpinTimer = null;
 let activeExtraTributeSpinId = null;
 let rateStateRef = null;
 let rateState = null;
+let sessionPaymentRef = null;
+let sessionPaymentState = null;
+let sessionPaymentInProgress = false;
+let localResetInProgress = false;
 let rateUpdateInProgress = false;
 const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
 const INITIATOR_ROOMS_KEY = "worshipTrueGoddess.initiatorRooms.v1";
@@ -792,7 +800,7 @@ function setAccountUsername(name) {
   renderExtraTributePanel();
   if (sessionAccountKey === key && accountSessionsRef) {
     renderAccountSummary();
-    recordEndedSession();
+    recordConfirmedSessionPayment(sessionPaymentState).catch(() => {});
     recordConfirmedExtraTribute(extraTributeState);
     return;
   }
@@ -817,29 +825,33 @@ function setAccountUsername(name) {
     setStatus("Could not load this username's tribute history. Check Firebase database permissions.");
   });
 
-  recordEndedSession();
+  recordConfirmedSessionPayment(sessionPaymentState).catch(() => {});
   recordConfirmedExtraTribute(extraTributeState);
 }
 
-function recordEndedSession() {
-  // The historical total only includes completed sessions. Both participants
-  // may attempt the write, but a transaction at this room's account entry makes
-  // the same session count only once.
-  if (!currentRoomCode || !startTime || !endTime || !sessionAccountUsername || !accountSessionsRef) return;
+function recordConfirmedSessionPayment(state) {
+  // A session only contributes to lifetime totals after the joiner explicitly
+  // confirms payment. The room-code key and transaction keep the same payment idempotent.
+  if (!state || state.status !== "confirmed" || !currentRoomCode ||
+      !sessionAccountUsername || !accountSessionsRef) return Promise.resolve(null);
 
-  const amount = Number(getFinalAmount());
-  if (!Number.isFinite(amount) || amount < 0) return;
+  const amount = Number(state.amount);
+  if (!Number.isFinite(amount) || amount < 0) return Promise.resolve(null);
 
+  const accountRefForWrite = accountSessionsRef;
   const entry = {
     amount: Math.round(amount * 100) / 100,
     username: sessionAccountUsername,
     roomCode: String(currentRoomCode),
-    endedAt: Number(endTime)
+    type: "confirmedSessionPayment",
+    confirmedAt: Number(state.confirmedAt) || getServerNow(),
+    endedAt: Number(state.endedAt) || Number(endTime) || 0
   };
-  accountSessionsRef.child(String(currentRoomCode)).transaction((current) => current || entry)
+  return accountRefForWrite.child(String(currentRoomCode)).transaction((current) => current || entry)
     .catch((error) => {
-      console.error("Could not record ended session for tribute history:", error);
-      setStatus("Session ended, but its tribute total could not be saved. Check Firebase database permissions.");
+      console.error("Could not save the confirmed session payment:", error);
+      setStatus("Payment was confirmed, but the lifetime total could not be saved. Check Firebase database permissions.");
+      throw error;
     });
 }
 
@@ -1147,6 +1159,103 @@ function readActiveSession() {
   return null;
 }
 
+function updateSessionPaymentUI() {
+  const container = document.getElementById("sessionPaymentContainer");
+  const button = document.getElementById("confirmSessionPaymentButton");
+  const message = document.getElementById("sessionPaymentMessage");
+  if (!container || !button || !message) return;
+
+  const shouldShow = !!currentRoomCode && !!endTime && !isInitiator;
+  container.style.display = shouldShow ? "block" : "none";
+
+  if (sessionPaymentState && sessionPaymentState.status === "confirmed") {
+    button.textContent = "Payment Confirmed";
+    button.disabled = true;
+    message.textContent = "The session amount has been added to the lifetime total.";
+    if (isInitiator) setStatus("Your tribute has been confirmed");
+  } else {
+    button.textContent = "Confirm Payment";
+    button.disabled = !shouldShow || sessionPaymentInProgress;
+    message.textContent = "";
+  }
+  const resetButton = document.getElementById("resetSessionButton");
+  if (resetButton) resetButton.disabled = sessionPaymentInProgress;
+}
+
+async function confirmSessionPayment() {
+  if (isInitiator || !endTime || !roomRef || !sessionPaymentRef || sessionPaymentInProgress) return;
+  if (sessionPaymentState && sessionPaymentState.status === "confirmed") {
+    updateSessionPaymentUI();
+    return;
+  }
+
+  const button = document.getElementById("confirmSessionPaymentButton");
+  sessionPaymentInProgress = true;
+  button.disabled = true;
+  const resetButton = document.getElementById("resetSessionButton");
+  if (resetButton) resetButton.disabled = true;
+  setStatus("Confirming payment…");
+
+  try {
+    const amount = Number(getFinalAmount());
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new Error("The session amount could not be calculated.");
+    }
+
+    const confirmedAt = getServerNow();
+    const confirmation = {
+      status: "confirmed",
+      amount: Math.round(amount * 100) / 100,
+      roomCode: String(currentRoomCode),
+      endedAt: Number(endTime),
+      confirmedAt,
+      confirmedBy: myName || "Fhyra"
+    };
+
+    // Use a room-level transaction so a concurrent reset wins if it happens first;
+    // once payment confirmation commits, a later reset keeps that confirmed payment.
+    const result = await roomRef.transaction((currentRoom) => {
+      if (!currentRoom || Number(currentRoom.resetAt) > 0 || !Number(currentRoom.endTime)) return;
+      if (currentRoom.sessionPayment && currentRoom.sessionPayment.status === "confirmed") return;
+      currentRoom.sessionPayment = confirmation;
+      return currentRoom;
+    });
+
+    if (!result.committed) {
+      const currentRoom = result.snapshot.val() || {};
+      sessionPaymentState = currentRoom.sessionPayment || null;
+      if (Number(currentRoom.resetAt) > 0) {
+        setStatus("This session has already been reset, so payment cannot be confirmed.");
+      } else if (sessionPaymentState && sessionPaymentState.status === "confirmed") {
+        setStatus("This session payment has already been confirmed.");
+      } else {
+        throw new Error("Payment was not confirmed. Please try again.");
+      }
+      updateSessionPaymentUI();
+      return;
+    }
+
+    sessionPaymentState = result.snapshot.val().sessionPayment || confirmation;
+    await recordConfirmedSessionPayment(sessionPaymentState);
+    updateSessionPaymentUI();
+
+    // This persisted system message lets the initiator see the confirmation
+    // even if they reconnect after the joiner confirms payment.
+    await messagesRef.push({
+      text: "Your tribute has been confirmed",
+      sender: "System",
+      timestamp: confirmedAt
+    });
+    setStatus("Payment confirmed. The session amount has been added to the lifetime total.");
+  } catch (error) {
+    console.error("Could not confirm session payment:", error);
+    setStatus(error && error.message ? error.message : "Could not confirm payment. Check your connection and try again.");
+  } finally {
+    sessionPaymentInProgress = false;
+    updateSessionPaymentUI();
+  }
+}
+
 function showEndedState() {
   if (timerInterval) {
     clearInterval(timerInterval);
@@ -1157,14 +1266,13 @@ function showEndedState() {
   stopBubbles();
   setStatus("Session ended");
   renderRateControl();
-  recordEndedSession();
 
   // The joiner controls resetting the shared session. The reset event is
   // written to Firebase so both participants return to the main menu together.
   document.getElementById("endSection").style.display = "block";
   document.getElementById("resetSessionContainer").innerHTML = isInitiator
     ? ""
-    : '<button type="button" onclick="resetSessionForBoth()">Reset Session for Both</button>';
+    : '<button type="button" id="resetSessionButton" onclick="resetSessionForBoth()">Reset Session for Both</button>';
   if (isInitiator) {
     const finalAmount = getFinalAmount();
     document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
@@ -1172,6 +1280,7 @@ function showEndedState() {
   } else {
     document.getElementById("paymentButtons").style.display = "none";
   }
+  updateSessionPaymentUI();
   document.getElementById("endButtonContainer").innerHTML = "";
   document.getElementById("chatInput").disabled = true;
   document.getElementById("sendBtn").disabled = true;
@@ -1189,6 +1298,7 @@ function returnToMainMenu() {
   if (extraTributeRef) extraTributeRef.off();
   if (joinerPresenceRef) joinerPresenceRef.off();
   if (rateStateRef) rateStateRef.off();
+  if (sessionPaymentRef) sessionPaymentRef.off();
   if (accountSessionsRef) accountSessionsRef.off();
   if (roomRef) roomRef.off();
   clearExtraTributeSpinTimer();
@@ -1196,6 +1306,10 @@ function returnToMainMenu() {
   joinerPresenceRef = null;
   rateStateRef = null;
   rateState = null;
+  sessionPaymentRef = null;
+  sessionPaymentState = null;
+  sessionPaymentInProgress = false;
+  localResetInProgress = false;
   rateUpdateInProgress = false;
   joinerHasJoined = false;
   extraTributeState = null;
@@ -1264,6 +1378,10 @@ function returnToMainMenu() {
   document.getElementById("accountMessage").textContent = "";
   document.getElementById("paymentButtons").style.display = "none";
   document.getElementById("endSection").style.display = "none";
+  document.getElementById("sessionPaymentContainer").style.display = "none";
+  document.getElementById("confirmSessionPaymentButton").textContent = "Confirm Payment";
+  document.getElementById("confirmSessionPaymentButton").disabled = false;
+  document.getElementById("sessionPaymentMessage").textContent = "";
   document.getElementById("controls").style.display = "block";
   setStatus("");
 }
@@ -1360,12 +1478,17 @@ function startChat(roomCode) {
   if (extraTributeRef) extraTributeRef.off();
   if (joinerPresenceRef) joinerPresenceRef.off();
   if (rateStateRef) rateStateRef.off();
+  if (sessionPaymentRef) sessionPaymentRef.off();
   if (accountSessionsRef) accountSessionsRef.off();
   clearExtraTributeSpinTimer();
   extraTributeRef = null;
   joinerPresenceRef = null;
   rateStateRef = null;
   rateState = null;
+  sessionPaymentRef = null;
+  sessionPaymentState = null;
+  sessionPaymentInProgress = false;
+  localResetInProgress = false;
   rateUpdateInProgress = false;
   joinerHasJoined = false;
   extraTributeState = null;
@@ -1393,7 +1516,9 @@ function startChat(roomCode) {
   extraTributeRef = roomRef.child("extraTributeState");
   joinerPresenceRef = roomRef.child("joinerPresent");
   rateStateRef = roomRef.child("rateState");
+  sessionPaymentRef = roomRef.child("sessionPayment");
   rateState = null;
+  sessionPaymentState = null;
   joinerHasJoined = false;
   messagesQuery = messagesRef.orderByChild("timestamp");
 
@@ -1452,12 +1577,28 @@ function startChat(roomCode) {
     setStatus("Could not load the current rate. Check Firebase database permissions.");
   });
 
+  sessionPaymentRef.on("value", (snapshot) => {
+    const value = snapshot.val();
+    sessionPaymentState = value && typeof value === "object" ? value : null;
+    updateSessionPaymentUI();
+    if (sessionPaymentState && sessionPaymentState.status === "confirmed") {
+      recordConfirmedSessionPayment(sessionPaymentState).catch(() => {});
+    }
+  }, (error) => {
+    console.error("Could not load session payment status:", error);
+    setStatus("Could not load payment status. Check Firebase database permissions.");
+  });
+
   document.getElementById("roomCode").textContent = currentRoomCode;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
   document.getElementById("messages").innerHTML = "";
   document.getElementById("paymentButtons").style.display = "none";
   document.getElementById("endSection").style.display = "none";
+  document.getElementById("sessionPaymentContainer").style.display = "none";
+  document.getElementById("confirmSessionPaymentButton").textContent = "Confirm Payment";
+  document.getElementById("confirmSessionPaymentButton").disabled = false;
+  document.getElementById("sessionPaymentMessage").textContent = "";
   document.getElementById("chatBox").style.display = "block";
   document.getElementById("chatInput").disabled = false;
   document.getElementById("sendBtn").disabled = false;
@@ -1479,7 +1620,6 @@ function startChat(roomCode) {
     if (endTime) {
       updateDisplay();
       showEndedState();
-      recordEndedSession();
     } else {
       setStatus("Session started");
       startLoop();
@@ -1493,13 +1633,12 @@ function startChat(roomCode) {
       endTime = val;
       updateDisplay();
       showEndedState();
-      recordEndedSession();
     }
   });
 
   resetRef.on("value", (snap) => {
     const val = Number(snap.val());
-    if (Number.isFinite(val) && val > 0) {
+    if (Number.isFinite(val) && val > 0 && !localResetInProgress) {
       returnToMainMenu();
     }
   });
@@ -1531,6 +1670,7 @@ document.getElementById("chatInput").addEventListener("keypress", (e) => {
 document.getElementById("extraTributeStartButton").addEventListener("click", startExtraTributeDraw);
 document.getElementById("confirmExtraTributeButton").addEventListener("click", confirmExtraTribute);
 document.getElementById("changeRateButton").addEventListener("click", changeSessionRate);
+document.getElementById("confirmSessionPaymentButton").addEventListener("click", confirmSessionPayment);
 
 // Put these near the top of your script with your real values
 const EMAILJS_PUBLIC_KEY = "6yUaltYoDr-gtit33";
@@ -1773,17 +1913,33 @@ async function joinSession() {
   }
 }
 
-function resetSessionForBoth() {
-  // Only the joiner can reset the room for both participants.
-  if (isInitiator || !endTime || !roomRef || !resetRef) return;
+async function resetSessionForBoth() {
+  // Only the joiner can reset the room for both participants. Resetting alone
+  // never records the session amount; only Confirm Payment does that.
+  if (isInitiator || !endTime || !roomRef || !resetRef || sessionPaymentInProgress || localResetInProgress) return;
+  localResetInProgress = true;
   setStatus("Resetting session for both participants…");
-  resetRef.set(getServerNow()).then(() => {
+  try {
+    // This uses the same room-level transaction as payment confirmation. If reset
+    // commits first, payment confirmation will be rejected; confirmed payments
+    // remain counted if the session is reset afterward.
+    const result = await roomRef.transaction((currentRoom) => {
+      if (!currentRoom) return;
+      if (Number(currentRoom.resetAt) > 0) return;
+      currentRoom.resetAt = getServerNow();
+      return currentRoom;
+    });
+    if (!result.committed && Number(result.snapshot.val() && result.snapshot.val().resetAt) <= 0) {
+      throw new Error("The reset could not be saved.");
+    }
     // The initiator's reset listener will return their device to the main menu.
+    localResetInProgress = false;
     returnToMainMenu();
-  }).catch((error) => {
+  } catch (error) {
+    localResetInProgress = false;
     console.error("Could not reset session:", error);
     setStatus("Could not reset session. Check your connection and try again.");
-  });
+  }
 }
 
 function endSession() {
@@ -1882,7 +2038,6 @@ async function refreshRoomState() {
 
     if (endTime) {
       showEndedState();
-      recordEndedSession();
     } else if (startTime) {
       setStatus("Session started");
       startLoop();
