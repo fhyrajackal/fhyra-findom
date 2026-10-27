@@ -385,15 +385,16 @@
     <input type="text" id="initiatorNameInput" placeholder="Your username" maxlength="40" autocomplete="nickname" aria-label="Your username" />
     <button onclick="initiateSession()">Initiate Session</button>
     <div style="margin: 0.7rem 0; color: #b07080;">or</div>
-    <input type="text" id="roomInput" placeholder="Enter room code" autocapitalize="characters" autocomplete="off" />
-    <button onclick="joinSession()">Join Session</button>
+    <input type="text" id="roomInput" placeholder="Initiator room code" autocapitalize="characters" autocomplete="off" aria-label="Initiator room code" />
+    <button onclick="joinSession()">Rejoin Session</button>
+    <p style="color:#b07080; margin:0.35rem 0 0; font-size:0.85rem;">Room codes are for the initiator to rejoin. Joiners must use the invitation link sent by email.</p>
   </div>
 
   <div class="room" id="roomDisplay" style="display:none;">
     Room Code:<br>
     <span id="roomCode"></span><br>
     <button onclick="copyCode()">Copy Code</button>
-    <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Share this code so the other person can join.</p>
+    <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Keep this code to rejoin as the initiator. The joiner must use the invitation link sent by email.</p>
     <div id="endButtonContainer"></div>
   </div>
 
@@ -502,8 +503,9 @@ let extraTributeState = null;
 let extraTributeSpinTimer = null;
 let activeExtraTributeSpinId = null;
 const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
+const INITIATOR_ROOMS_KEY = "worshipTrueGoddess.initiatorRooms.v1";
 
-const RATE_PER_MINUTE = 3;
+const RATE_PER_MINUTE = 10;
 const EXTRA_TRIBUTE_SPIN_DURATION_MS = 2400;
 const ROOM_CODE_PATTERN = /^(?:\d{13}|[a-f0-9]{32})$/i; // legacy rooms + new unguessable rooms
 
@@ -516,6 +518,15 @@ function generateRoomCode() {
   const bytes = new Uint8Array(16);
   window.crypto.getRandomValues(bytes);
   return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function hashInviteToken(token) {
+  if (!window.crypto || !window.crypto.subtle) {
+    throw new Error("Secure invitation verification is unavailable. Open the site over HTTPS in a modern browser.");
+  }
+  const bytes = new TextEncoder().encode(String(token));
+  const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function setStatus(msg) {
@@ -915,12 +926,55 @@ function updateDisplay() {
   document.getElementById("time").textContent = formatTime(elapsedMs);
 }
 
+function rememberInitiatorRoom(code, username = "") {
+  const normalizedCode = String(code || "").trim().toLowerCase();
+  if (!ROOM_CODE_PATTERN.test(normalizedCode)) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(INITIATOR_ROOMS_KEY) || "[]");
+    const rooms = Array.isArray(saved) ? saved : [];
+    const updated = rooms.filter((entry) =>
+      entry && String(entry.code || "").trim().toLowerCase() !== normalizedCode
+    );
+    updated.push({ code: normalizedCode, username: normalizeUsername(username) });
+    // Keep a modest local history so the initiator can recover recent sessions.
+    localStorage.setItem(INITIATOR_ROOMS_KEY, JSON.stringify(updated.slice(-50)));
+  } catch (error) {
+    console.warn("Could not save initiator room history on this device:", error);
+  }
+}
+
+function findKnownInitiatorRoom(code) {
+  const normalizedCode = String(code || "").trim().toLowerCase();
+  try {
+    const savedRooms = JSON.parse(localStorage.getItem(INITIATOR_ROOMS_KEY) || "[]");
+    if (Array.isArray(savedRooms)) {
+      const match = savedRooms.find((entry) => entry &&
+        String(entry.code || "").trim().toLowerCase() === normalizedCode &&
+        ROOM_CODE_PATTERN.test(String(entry.code || "").trim())
+      );
+      if (match) {
+        return { code: normalizedCode, username: normalizeUsername(match.username || "") };
+      }
+    }
+  } catch (error) {
+    console.warn("Could not read initiator room history:", error);
+  }
+
+  // Backward compatibility for a session saved before the room-history list existed.
+  const active = readActiveSession();
+  if (active && active.role === "initiator" && active.code.toLowerCase() === normalizedCode) {
+    return { code: normalizedCode, username: normalizeUsername(active.username || "") };
+  }
+  return null;
+}
+
 function saveActiveSession(code, role, username = "") {
   try {
     localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify({ code: String(code), role, username }));
   } catch (error) {
     console.warn("Could not persist active session on this device:", error);
   }
+  if (role === "initiator") rememberInitiatorRoom(code, username);
 }
 
 function readActiveSession() {
@@ -1325,11 +1379,27 @@ async function initiateSession() {
     return;
   }
 
+  // Give the joiner a separate random invitation token. The room code shown
+  // to the initiator is not sufficient to join as the joiner.
+  let inviteToken;
+  let inviteTokenHash;
+  try {
+    inviteToken = generateRoomCode();
+    inviteTokenHash = await hashInviteToken(inviteToken);
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || "Could not generate a secure invitation token.");
+    return;
+  }
+
   // Create the room metadata before sending the invite, so the joiner never
   // receives a link before the room exists in the database.
   setStatus("Creating session…");
   try {
-    await db.ref("rooms/" + code + "/initiatorName").set(initiatorName);
+    await db.ref("rooms/" + code).update({
+      initiatorName,
+      inviteTokenHash
+    });
   } catch (error) {
     console.error("Could not create the room:", error);
     setStatus("Could not create the session. Check Firebase database permissions.");
@@ -1343,7 +1413,7 @@ async function initiateSession() {
   setStatus("Waiting for joiner…");
   startChat(code);
 
-  const joinLink = JOIN_BASE_URL + "/?start=" + encodeURIComponent(code);
+  const joinLink = JOIN_BASE_URL + "/?start=" + encodeURIComponent(code) + "&invite=" + encodeURIComponent(inviteToken);
   setStatus("Sending join email…");
   try {
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
@@ -1359,8 +1429,9 @@ async function initiateSession() {
   }
 }
 
-async function joinRoomByCode(code) {
+async function joinRoomByCode(code, inviteToken = "") {
   code = String(code || "").trim().toLowerCase();
+  inviteToken = String(inviteToken || "").trim();
   if (!ROOM_CODE_PATTERN.test(code)) {
     setStatus("That room code is invalid. Check the code and try again.");
     return;
@@ -1372,10 +1443,20 @@ async function joinRoomByCode(code) {
   try {
     // Check the room's existing owner metadata before touching startTime.
     // This prevents a mistyped/nonexistent code from accidentally creating a room.
-    const ownerSnapshot = await room.child("initiatorName").once("value");
+    const [ownerSnapshot, savedInviteHashSnapshot] = await Promise.all([
+      room.child("initiatorName").once("value"),
+      room.child("inviteTokenHash").once("value")
+    ]);
     const ownerName = normalizeUsername(ownerSnapshot.val());
     if (!ownerName) {
       throw new Error("No session exists for that room code. Check the code or ask for a new invite.");
+    }
+
+    const savedInviteTokenHash = String(savedInviteHashSnapshot.val() || "").trim();
+    if (savedInviteTokenHash) {
+      if (!inviteToken || await hashInviteToken(inviteToken) !== savedInviteTokenHash) {
+        throw new Error("This session can only be joined using the invitation link sent by the initiator.");
+      }
     }
 
     const offsetSnapshot = await db.ref(".info/serverTimeOffset").once("value");
@@ -1424,23 +1505,63 @@ async function joinRoomByCode(code) {
       }
     }
 
-    setStatus(error && error.message && error.message.startsWith("No session exists")
+    setStatus(error && error.message && (
+      error.message.startsWith("No session exists") ||
+      error.message.startsWith("This session can only be joined")
+    )
       ? error.message
       : (error && error.message === "Could not obtain session start time."
           ? error.message
-          : "Could not join the session. Check the room code, connection, and database permissions."));
+          : "Could not join the session. Check the invitation link, connection, and database permissions."));
   }
 }
 
-function joinSession() {
-  const code = document.getElementById("roomInput").value.trim();
+async function joinSession() {
+  const code = document.getElementById("roomInput").value.trim().toLowerCase();
 
   if (!ROOM_CODE_PATTERN.test(code)) {
-    setStatus("Please enter a valid room code (13 digits for an older session, or a 32-character invite code).");
+    setStatus("Please enter a valid room code (13 digits for an older session, or a 32-character room code).");
     return;
   }
 
-  joinRoomByCode(code);
+  const knownRoom = findKnownInitiatorRoom(code);
+  if (!knownRoom) {
+    setStatus("Room codes are for the initiator to rejoin. Joiners must use the invitation link sent by email.");
+    return;
+  }
+
+  setStatus("Checking your session…");
+  try {
+    const room = db.ref("rooms/" + code);
+    const [ownerSnapshot, resetSnapshot] = await Promise.all([
+      room.child("initiatorName").once("value"),
+      room.child("resetAt").once("value")
+    ]);
+    const ownerName = normalizeUsername(ownerSnapshot.val());
+    if (!ownerName) {
+      throw new Error("No session exists for that room code. Check the code or start a new session.");
+    }
+    if (knownRoom.username && ownerName.toLowerCase() !== knownRoom.username.toLowerCase()) {
+      throw new Error("That room code does not match your saved initiator session on this device.");
+    }
+    const resetAt = Number(resetSnapshot.val());
+    if (Number.isFinite(resetAt) && resetAt > 0) {
+      throw new Error("This session has already been reset. Start a new session instead.");
+    }
+
+    isInitiator = true;
+    initiatorName = ownerName;
+    saveActiveSession(code, "initiator", initiatorName);
+    document.getElementById("roomInput").value = "";
+    document.getElementById("roomCode").textContent = code;
+    document.getElementById("roomDisplay").style.display = "block";
+    document.getElementById("controls").style.display = "none";
+    startChat(code);
+    setStatus("Rejoined your session.");
+  } catch (error) {
+    console.error("Could not rejoin as initiator:", error);
+    setStatus(error && error.message ? error.message : "Could not rejoin the session. Check your connection and database permissions.");
+  }
 }
 
 function resetSessionForBoth() {
@@ -1514,6 +1635,8 @@ function restoreSavedSession() {
   if (nameInput && isInitiator && initiatorName) {
     initiatorName = normalizeUsername(initiatorName);
     nameInput.value = initiatorName;
+    // Add older locally saved initiator sessions to the room-code recovery list.
+    rememberInitiatorRoom(saved.code, initiatorName);
   }
   document.getElementById("roomCode").textContent = saved.code;
   document.getElementById("roomDisplay").style.display = "block";
@@ -1570,9 +1693,10 @@ function handleAppResume() {
 window.addEventListener("load", () => {
   const params = new URLSearchParams(window.location.search);
   const startParam = params.get("start");
+  const inviteParam = params.get("invite");
 
   if (startParam) {
-    joinRoomByCode(startParam);
+    joinRoomByCode(startParam, inviteParam);
     return;
   }
 
