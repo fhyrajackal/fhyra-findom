@@ -1071,7 +1071,7 @@ async function confirmExtraTribute() {
     });
 
     if (result.committed) {
-      setStatus(`Extra tribute of $${amount.toFixed(2)} confirmed. Updating the account total…`);
+      setStatus(`Extra tribute of $${amount.toFixed(2)} confirmed. Total amount updated.`);
     } else {
       button.disabled = false;
       setStatus("This extra tribute has already been confirmed or replaced.");
@@ -1544,7 +1544,7 @@ rateStateRef.on("value", (snapshot) => {
 
     if (isInitiator && state.updatedBy === "Fhyra" && !endTime) {
       setStatus(
-        `Rate changed to $${state.ratePerMinute} per minute. The new rate applies from now on.`
+        `Rate changed to $${state.ratePerMinute} / min from now on.`
       );
     }
   }
