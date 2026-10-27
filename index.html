@@ -1524,6 +1524,32 @@ function startChat(roomCode) {
   extraTributeRef = roomRef.child("extraTributeState");
   joinerPresenceRef = roomRef.child("joinerPresent");
   rateStateRef = roomRef.child("rateState");
+ 
+let lastRateUpdateSeenAt = null;
+
+rateStateRef.on("value", (snapshot) => {
+  const state = normalizeRateState(snapshot.val());
+  if (!state) return;
+
+  const updatedAt = Number(state.updatedAt) || 0;
+
+  // Ignore the initial Firebase value when joining or refreshing.
+  if (lastRateUpdateSeenAt === null) {
+    lastRateUpdateSeenAt = updatedAt;
+    return;
+  }
+
+  if (updatedAt > lastRateUpdateSeenAt) {
+    lastRateUpdateSeenAt = updatedAt;
+
+    if (isInitiator && state.updatedBy === "Fhyra" && !endTime) {
+      setStatus(
+        `Rate changed to $${state.ratePerMinute} per minute. The new rate applies from now on.`
+      );
+    }
+  }
+});
+
   sessionPaymentRef = roomRef.child("sessionPayment");
   rateState = null;
   sessionPaymentState = null;
