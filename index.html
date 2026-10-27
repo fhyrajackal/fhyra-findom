@@ -403,23 +403,23 @@
     <button onclick="initiateSession()">Initiate Session</button>
     <p style="color:#b07080; margin:0.35rem 0 0; font-size:0.85rem;">Beg for Fhyra's attention, little toy~</p>
     <div style="margin: 0.7rem 0; color: #b07080;">or</div>
-    <input type="text" id="roomInput" placeholder="Initiator room code" autocapitalize="characters" autocomplete="off" aria-label="Initiator room code" />
+    <input type="text" id="roomInput" placeholder="Room code" autocapitalize="characters" autocomplete="off" aria-label="Room code" />
     <button onclick="joinSession()">Rejoin Session</button>
-    <p style="color:#b07080; margin:0.35rem 0 0; font-size:0.85rem;">Room codes are for the initiator to rejoin. Joiners must use the invitation link sent by email.</p>
+    <p style="color:#b07080; margin:0.35rem 0 0; font-size:0.85rem;">Room codes are for the paypup to rejoin or move between devices.</p>
   </div>
 
   <div class="room" id="roomDisplay" style="display:none;">
     Room Code:<br>
     <span id="roomCode"></span><br>
     <button onclick="copyCode()">Copy Code</button>
-    <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Keep this code to rejoin as the initiator. The joiner must use the invitation link sent by email.</p>
+    <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Keep this code to rejoin or move between devices.</p>
     <div id="endButtonContainer"></div>
   </div>
 
   <section id="rateControlSection" aria-live="polite" style="display:none;">
     <div id="rateControlTitle">Set tribute rate</div>
-    <div id="currentRateLabel">Current rate: $3.00 per minute</div>
-    <label for="rateInput">New rate ($1–$999 per minute)</label>
+    <div id="currentRateLabel">Current rate: $3.00 / min</div>
+    <label for="rateInput">New rate ($1–$999 / min)</label>
     <div id="rateControlRow">
       <input type="number" id="rateInput" min="1" max="999" step="1" value="3" inputmode="numeric" aria-label="New tribute rate in dollars per minute" />
       <button type="button" id="changeRateButton">Change rate</button>
@@ -1171,7 +1171,7 @@ function updateSessionPaymentUI() {
   if (sessionPaymentState && sessionPaymentState.status === "confirmed") {
     button.textContent = "Payment Confirmed";
     button.disabled = true;
-    message.textContent = "The session amount has been added to the lifetime total.";
+    message.textContent = "Amount added to the lifetime total.";
     if (isInitiator) setStatus("Your tribute has been confirmed");
   } else {
     button.textContent = "Confirm Payment";
