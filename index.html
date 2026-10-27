@@ -362,6 +362,23 @@
   #messages {
     height: clamp(260px, 40vh, 420px);
   }
+  #rateControlSection {
+    width: 100%;
+    max-width: 340px;
+    margin: 0.65rem auto 0;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid rgba(190, 70, 100, 0.58);
+    border-radius: 12px;
+    background: rgba(15, 4, 8, 0.86);
+    text-align: center;
+  }
+  #rateControlTitle { color: #ffc2ce; font-weight: 600; margin-bottom: 0.25rem; }
+  #currentRateLabel { color: #ff7a95; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 0.45rem; }
+  #rateControlSection label { display: block; color: #d8a2ae; font-size: 0.82rem; margin-bottom: 0.15rem; }
+  #rateControlRow { display: flex; align-items: center; justify-content: center; gap: 0.35rem; }
+  #rateInput { width: 104px; flex: 0 0 104px; min-height: 42px; padding: 0.5rem; margin: 0.15rem 0; font-size: 16px; }
+  #changeRateButton { width: auto; flex: 1; max-width: 170px; min-height: 42px; padding: 0.55rem 0.65rem; margin: 0.15rem 0; font-size: 0.9rem; border-radius: 9px; }
+  #rateControlNote { color: #b07080; font-size: 0.76rem; line-height: 1.35; margin-top: 0.4rem; }
 </style>
 </head>
 <body>
@@ -384,6 +401,7 @@
   <div class="controls" id="controls">
     <input type="text" id="initiatorNameInput" placeholder="Your username" maxlength="40" autocomplete="nickname" aria-label="Your username" />
     <button onclick="initiateSession()">Initiate Session</button>
+    <p style="color:#b07080; margin:0.35rem 0 0; font-size:0.85rem;">Beg for Fhyra's attention, little toy~</p>
     <div style="margin: 0.7rem 0; color: #b07080;">or</div>
     <input type="text" id="roomInput" placeholder="Initiator room code" autocapitalize="characters" autocomplete="off" aria-label="Initiator room code" />
     <button onclick="joinSession()">Rejoin Session</button>
@@ -397,6 +415,17 @@
     <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Keep this code to rejoin as the initiator. The joiner must use the invitation link sent by email.</p>
     <div id="endButtonContainer"></div>
   </div>
+
+  <section id="rateControlSection" aria-live="polite" style="display:none;">
+    <div id="rateControlTitle">Set tribute rate</div>
+    <div id="currentRateLabel">Current rate: $3.00 per minute</div>
+    <label for="rateInput">New rate ($1–$999 per minute)</label>
+    <div id="rateControlRow">
+      <input type="number" id="rateInput" min="1" max="999" step="1" value="3" inputmode="numeric" aria-label="New tribute rate in dollars per minute" />
+      <button type="button" id="changeRateButton">Change rate</button>
+    </div>
+    <div id="rateControlNote">The new rate applies from this moment forward.</div>
+  </section>
 
   <div class="end-section" id="endSection" style="display:none;">
     <div>Session Ended</div>
@@ -502,10 +531,13 @@ let joinerHasJoined = false;
 let extraTributeState = null;
 let extraTributeSpinTimer = null;
 let activeExtraTributeSpinId = null;
+let rateStateRef = null;
+let rateState = null;
+let rateUpdateInProgress = false;
 const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
 const INITIATOR_ROOMS_KEY = "worshipTrueGoddess.initiatorRooms.v1";
 
-const RATE_PER_MINUTE = 10;
+const DEFAULT_RATE_PER_MINUTE = 3;
 const EXTRA_TRIBUTE_SPIN_DURATION_MS = 2400;
 const ROOM_CODE_PATTERN = /^(?:\d{13}|[a-f0-9]{32})$/i; // legacy rooms + new unguessable rooms
 
@@ -547,9 +579,135 @@ function getElapsedMs() {
   return Math.max(0, now - Number(startTime));
 }
 
+function normalizeRateState(value) {
+  if (!value || typeof value !== "object") return null;
+  const rate = Number(value.ratePerMinute);
+  const effectiveAt = Number(value.effectiveAt);
+  const accruedAmount = Number(value.accruedAmount);
+  if (!Number.isInteger(rate) || rate < 1 || rate > 999 ||
+      !Number.isFinite(effectiveAt) || effectiveAt < 0 ||
+      !Number.isFinite(accruedAmount) || accruedAmount < 0) return null;
+  return {
+    ratePerMinute: rate,
+    effectiveAt,
+    accruedAmount,
+    updatedAt: Number(value.updatedAt) || 0,
+    updatedBy: typeof value.updatedBy === "string" ? value.updatedBy : ""
+  };
+}
+
+function getEffectiveRateState(rawState = rateState, sessionStart = startTime) {
+  const start = Number(sessionStart);
+  const normalized = normalizeRateState(rawState);
+  if (!Number.isFinite(start) || start <= 0) {
+    return normalized || { ratePerMinute: DEFAULT_RATE_PER_MINUTE, effectiveAt: 0, accruedAmount: 0 };
+  }
+  if (!normalized) {
+    // Older rooms without rate metadata use the default rate from session start.
+    return { ratePerMinute: DEFAULT_RATE_PER_MINUTE, effectiveAt: start, accruedAmount: 0 };
+  }
+  return {
+    ...normalized,
+    effectiveAt: normalized.effectiveAt > 0 ? Math.max(start, normalized.effectiveAt) : start
+  };
+}
+
+function getAmountAt(timestamp, rawState = rateState, sessionStart = startTime) {
+  const start = Number(sessionStart);
+  const target = Number(timestamp);
+  if (!Number.isFinite(start) || start <= 0 || !Number.isFinite(target)) return 0;
+  const state = getEffectiveRateState(rawState, start);
+  const effectiveAt = Math.max(start, Number(state.effectiveAt) || start);
+  const elapsedAtCurrentRate = Math.max(0, target - effectiveAt);
+  return Math.max(0, Number(state.accruedAmount) +
+    (elapsedAtCurrentRate / 60000) * Number(state.ratePerMinute));
+}
+
 function getFinalAmount() {
-  const elapsedMs = getElapsedMs();
-  return ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
+  const finalTimestamp = endTime ? Number(endTime) : getServerNow();
+  return getAmountAt(finalTimestamp).toFixed(2);
+}
+
+function renderRateControl() {
+  const section = document.getElementById("rateControlSection");
+  const input = document.getElementById("rateInput");
+  const button = document.getElementById("changeRateButton");
+  const isVisible = !!currentRoomCode && !isInitiator && !endTime;
+  section.style.display = isVisible ? "block" : "none";
+
+  const current = getEffectiveRateState();
+  document.getElementById("currentRateLabel").textContent =
+    `Current rate: $${Number(current.ratePerMinute).toFixed(2)} per minute`;
+  if (document.activeElement !== input) input.value = String(current.ratePerMinute);
+  input.disabled = !isVisible || rateUpdateInProgress || !startTime;
+  button.disabled = !isVisible || rateUpdateInProgress || !startTime;
+}
+
+async function changeSessionRate() {
+  if (isInitiator || endTime || !currentRoomCode || !roomRef || !rateStateRef) return;
+  if (!startTime) {
+    setStatus("The session must start before changing the rate.");
+    return;
+  }
+
+  const input = document.getElementById("rateInput");
+  const newRate = Number(input.value);
+  if (!Number.isInteger(newRate) || newRate < 1 || newRate > 999) {
+    setStatus("Enter a whole-number rate from $1 to $999 per minute.");
+    input.focus();
+    return;
+  }
+
+  const roomCodeForUpdate = currentRoomCode;
+  const sessionStart = Number(startTime);
+  const changeRequestedAt = getServerNow();
+  rateUpdateInProgress = true;
+  renderRateControl();
+
+  try {
+    const result = await rateStateRef.transaction((currentValue) => {
+      let previous = normalizeRateState(currentValue);
+      if (!previous) {
+        previous = {
+          ratePerMinute: DEFAULT_RATE_PER_MINUTE,
+          effectiveAt: sessionStart,
+          accruedAmount: 0
+        };
+      }
+      const previousEffectiveAt = previous.effectiveAt > 0
+        ? Math.max(sessionStart, previous.effectiveAt)
+        : sessionStart;
+      const effectiveAt = Math.max(changeRequestedAt, previousEffectiveAt);
+      const accumulated = Number(previous.accruedAmount) +
+        (Math.max(0, effectiveAt - previousEffectiveAt) / 60000) * Number(previous.ratePerMinute);
+
+      return {
+        ratePerMinute: newRate,
+        effectiveAt,
+        accruedAmount: accumulated,
+        updatedAt: changeRequestedAt,
+        updatedBy: "Fhyra"
+      };
+    });
+
+    if (!result.committed) {
+      throw new Error("The rate update was not saved.");
+    }
+    // Use the committed snapshot immediately on the joiner's device so ending
+    // the session straight after a rate change cannot use a stale local rate.
+    rateState = normalizeRateState(result.snapshot.val());
+    updateDisplay();
+    renderRateControl();
+    if (currentRoomCode === roomCodeForUpdate && !endTime) {
+      setStatus(`Rate changed to $${newRate} per minute. The new rate applies from now on.`);
+    }
+  } catch (error) {
+    console.error("Could not update the tribute rate:", error);
+    setStatus("Could not change the rate. Check your connection and Firebase permissions.");
+  } finally {
+    rateUpdateInProgress = false;
+    renderRateControl();
+  }
 }
 
 function normalizeUsername(name) {
@@ -922,7 +1080,7 @@ function updateDisplay() {
   const elapsedMs = Math.max(0, now - Number(startTime));
 
   document.getElementById("amount").textContent =
-    "$" + ((elapsedMs / 60000) * RATE_PER_MINUTE).toFixed(2);
+    "$" + getAmountAt(now).toFixed(2);
   document.getElementById("time").textContent = formatTime(elapsedMs);
 }
 
@@ -998,6 +1156,7 @@ function showEndedState() {
   updateDisplay();
   stopBubbles();
   setStatus("Session ended");
+  renderRateControl();
   recordEndedSession();
 
   // The joiner controls resetting the shared session. The reset event is
@@ -1029,11 +1188,15 @@ function returnToMainMenu() {
   if (initiatorNameRef) initiatorNameRef.off();
   if (extraTributeRef) extraTributeRef.off();
   if (joinerPresenceRef) joinerPresenceRef.off();
+  if (rateStateRef) rateStateRef.off();
   if (accountSessionsRef) accountSessionsRef.off();
   if (roomRef) roomRef.off();
   clearExtraTributeSpinTimer();
   extraTributeRef = null;
   joinerPresenceRef = null;
+  rateStateRef = null;
+  rateState = null;
+  rateUpdateInProgress = false;
   joinerHasJoined = false;
   extraTributeState = null;
   activeExtraTributeSpinId = null;
@@ -1088,6 +1251,8 @@ function returnToMainMenu() {
   document.getElementById("chatBox").style.display = "none";
   document.getElementById("accountSummary").style.display = "none";
   document.getElementById("extraTributeSection").style.display = "none";
+  document.getElementById("rateControlSection").style.display = "none";
+  document.getElementById("rateInput").value = String(DEFAULT_RATE_PER_MINUTE);
   document.getElementById("extraTributeDraw").style.display = "none";
   document.getElementById("extraTributeStartButton").style.display = "inline-block";
   document.getElementById("extraTributeJoinerLabel").style.display = "none";
@@ -1194,10 +1359,14 @@ function startChat(roomCode) {
   if (initiatorNameRef) initiatorNameRef.off();
   if (extraTributeRef) extraTributeRef.off();
   if (joinerPresenceRef) joinerPresenceRef.off();
+  if (rateStateRef) rateStateRef.off();
   if (accountSessionsRef) accountSessionsRef.off();
   clearExtraTributeSpinTimer();
   extraTributeRef = null;
   joinerPresenceRef = null;
+  rateStateRef = null;
+  rateState = null;
+  rateUpdateInProgress = false;
   joinerHasJoined = false;
   extraTributeState = null;
   activeExtraTributeSpinId = null;
@@ -1223,6 +1392,8 @@ function startChat(roomCode) {
   initiatorNameRef = roomRef.child("initiatorName");
   extraTributeRef = roomRef.child("extraTributeState");
   joinerPresenceRef = roomRef.child("joinerPresent");
+  rateStateRef = roomRef.child("rateState");
+  rateState = null;
   joinerHasJoined = false;
   messagesQuery = messagesRef.orderByChild("timestamp");
 
@@ -1272,6 +1443,15 @@ function startChat(roomCode) {
     }
   });
 
+  rateStateRef.on("value", (snapshot) => {
+    rateState = normalizeRateState(snapshot.val());
+    renderRateControl();
+    updateDisplay();
+  }, (error) => {
+    console.error("Could not load the current tribute rate:", error);
+    setStatus("Could not load the current rate. Check Firebase database permissions.");
+  });
+
   document.getElementById("roomCode").textContent = currentRoomCode;
   document.getElementById("roomDisplay").style.display = "block";
   document.getElementById("controls").style.display = "none";
@@ -1282,6 +1462,7 @@ function startChat(roomCode) {
   document.getElementById("chatInput").disabled = false;
   document.getElementById("sendBtn").disabled = false;
   renderExtraTributePanel();
+  renderRateControl();
 
   messagesQuery.on("child_added", (snapshot) => {
     const msg = snapshot.val();
@@ -1294,6 +1475,7 @@ function startChat(roomCode) {
     const val = Number(snap.val());
     if (!Number.isFinite(val) || val <= 0) return;
     startTime = val;
+    renderRateControl();
     if (endTime) {
       updateDisplay();
       showEndedState();
@@ -1309,6 +1491,7 @@ function startChat(roomCode) {
     const val = Number(snap.val());
     if (Number.isFinite(val) && val > 0) {
       endTime = val;
+      updateDisplay();
       showEndedState();
       recordEndedSession();
     }
@@ -1347,6 +1530,7 @@ document.getElementById("chatInput").addEventListener("keypress", (e) => {
 });
 document.getElementById("extraTributeStartButton").addEventListener("click", startExtraTributeDraw);
 document.getElementById("confirmExtraTributeButton").addEventListener("click", confirmExtraTribute);
+document.getElementById("changeRateButton").addEventListener("click", changeSessionRate);
 
 // Put these near the top of your script with your real values
 const EMAILJS_PUBLIC_KEY = "6yUaltYoDr-gtit33";
@@ -1400,6 +1584,13 @@ async function initiateSession() {
     const roomUpdates = {};
     roomUpdates["rooms/" + code + "/initiatorName"] = initiatorName;
     roomUpdates["rooms/" + code + "/inviteTokenHash"] = inviteTokenHash;
+    roomUpdates["rooms/" + code + "/rateState"] = {
+      ratePerMinute: DEFAULT_RATE_PER_MINUTE,
+      effectiveAt: 0,
+      accruedAmount: 0,
+      updatedAt: 0,
+      updatedBy: "System"
+    };
     roomUpdates["rooms/_inviteTokenIndex/" + inviteTokenHash] = code;
     await db.ref().update(roomUpdates);
   } catch (error) {
@@ -1597,6 +1788,10 @@ function resetSessionForBoth() {
 
 function endSession() {
   if (isInitiator || endTime || !roomRef) return;
+  if (rateUpdateInProgress) {
+    setStatus("Wait for the rate change to finish before ending the session.");
+    return;
+  }
 
   const now = getServerNow();
   roomRef.child("endTime").set(now).catch((error) => {
