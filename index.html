@@ -1594,13 +1594,28 @@ rateStateRef.on("value", (snapshot) => {
   });
 
   extraTributeRef.on("value", (snapshot) => {
-    const value = snapshot.val();
-    extraTributeState = value && typeof value === "object" ? value : null;
-    renderExtraTributePanel();
-    if (extraTributeState && extraTributeState.status === "confirmed") {
-      recordConfirmedExtraTribute(extraTributeState);
-    }
-  });
+  const previousState = extraTributeState;
+  const value = snapshot.val();
+  extraTributeState = value && typeof value === "object" ? value : null;
+
+  if (
+    isInitiator &&
+    previousState &&
+    previousState.status === "pending" &&
+    extraTributeState &&
+    extraTributeState.status === "confirmed"
+  ) {
+    setStatus(
+      `Extra tribute of $${Number(extraTributeState.amount).toFixed(2)} confirmed by Fhyra!`
+    );
+  }
+
+  renderExtraTributePanel();
+
+  if (extraTributeState && extraTributeState.status === "confirmed") {
+    recordConfirmedExtraTribute(extraTributeState);
+  }
+});
 
   rateStateRef.on("value", (snapshot) => {
     rateState = normalizeRateState(snapshot.val());
