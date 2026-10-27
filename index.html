@@ -421,7 +421,7 @@
     <div id="currentRateLabel">Current rate: $3.00 / min</div>
     <label for="rateInput">New rate ($1–$999 / min)</label>
     <div id="rateControlRow">
-      <input type="number" id="rateInput" min="1" max="999" step="1" value="3" inputmode="numeric" aria-label="New tribute rate in dollars per minute" />
+      <input type="number" id="rateInput" min="1" max="999" step="1" value="3" inputmode="numeric" aria-label="New tribute rate in dollars / min" />
       <button type="button" id="changeRateButton">Change rate</button>
     </div>
     <div id="rateControlNote">The new rate applies from this moment forward.</div>
@@ -645,7 +645,7 @@ function renderRateControl() {
 
   const current = getEffectiveRateState();
   document.getElementById("currentRateLabel").textContent =
-    `Current rate: $${Number(current.ratePerMinute).toFixed(2)} per minute`;
+    `Current rate: $${Number(current.ratePerMinute).toFixed(2)} / min`;
   if (document.activeElement !== input) input.value = String(current.ratePerMinute);
   input.disabled = !isVisible || rateUpdateInProgress || !startTime;
   button.disabled = !isVisible || rateUpdateInProgress || !startTime;
@@ -661,7 +661,7 @@ async function changeSessionRate() {
   const input = document.getElementById("rateInput");
   const newRate = Number(input.value);
   if (!Number.isInteger(newRate) || newRate < 1 || newRate > 999) {
-    setStatus("Enter a whole-number rate from $1 to $999 per minute.");
+    setStatus("Enter a whole-number rate from $1 to $999 / min.");
     input.focus();
     return;
   }
@@ -707,7 +707,7 @@ async function changeSessionRate() {
     updateDisplay();
     renderRateControl();
     if (currentRoomCode === roomCodeForUpdate && !endTime) {
-      setStatus(`Rate changed to $${newRate} per minute. The new rate applies from now on.`);
+      setStatus(`Rate changed to $${newRate} / min. The new rate applies from now on.`);
     }
   } catch (error) {
     console.error("Could not update the tribute rate:", error);
