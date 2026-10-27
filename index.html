@@ -1392,14 +1392,16 @@ async function initiateSession() {
     return;
   }
 
-  // Create the room metadata before sending the invite, so the joiner never
-  // receives a link before the room exists in the database.
+  // Create the room metadata and a token-to-room lookup before sending the
+  // invite. New invitation URLs contain only the token, not the initiator's
+  // room code, so the room code can remain the initiator's recovery credential.
   setStatus("Creating session…");
   try {
-    await db.ref("rooms/" + code).update({
-      initiatorName,
-      inviteTokenHash
-    });
+    const roomUpdates = {};
+    roomUpdates["rooms/" + code + "/initiatorName"] = initiatorName;
+    roomUpdates["rooms/" + code + "/inviteTokenHash"] = inviteTokenHash;
+    roomUpdates["rooms/_inviteTokenIndex/" + inviteTokenHash] = code;
+    await db.ref().update(roomUpdates);
   } catch (error) {
     console.error("Could not create the room:", error);
     setStatus("Could not create the session. Check Firebase database permissions.");
@@ -1413,19 +1415,41 @@ async function initiateSession() {
   setStatus("Waiting for joiner…");
   startChat(code);
 
-  const joinLink = JOIN_BASE_URL + "/?start=" + encodeURIComponent(code) + "&invite=" + encodeURIComponent(inviteToken);
+  const joinLink = JOIN_BASE_URL + "/?invite=" + encodeURIComponent(inviteToken);
   setStatus("Sending join email…");
   try {
     await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
       to_email: "hanychlaura@gmail.com",
       join_link: joinLink,
-      room_code: code,
+      room_code: "Use the invitation link",
       initiator_username: initiatorName
     });
     setStatus("Join email sent — waiting for Fhyra to join.");
   } catch (err) {
     console.error("Email failed:", err);
-    setStatus("Session created, but the email failed. Share the room code manually.");
+    setStatus("Session created, but the invitation email failed. Check the EmailJS setup before creating another session.");
+  }
+}
+
+async function joinRoomByInviteToken(inviteToken) {
+  inviteToken = String(inviteToken || "").trim();
+  if (!inviteToken) {
+    setStatus("This invitation link is missing its token. Ask the initiator for a new link.");
+    return;
+  }
+
+  setStatus("Checking invitation link…");
+  try {
+    const tokenHash = await hashInviteToken(inviteToken);
+    const codeSnapshot = await db.ref("rooms/_inviteTokenIndex/" + tokenHash).once("value");
+    const code = String(codeSnapshot.val() || "").trim().toLowerCase();
+    if (!ROOM_CODE_PATTERN.test(code)) {
+      throw new Error("This invitation link is invalid or expired. Ask the initiator for a new link.");
+    }
+    await joinRoomByCode(code, inviteToken);
+  } catch (error) {
+    console.error("Could not resolve invitation link:", error);
+    setStatus(error && error.message ? error.message : "Could not verify the invitation link. Check your connection and database permissions.");
   }
 }
 
@@ -1524,12 +1548,9 @@ async function joinSession() {
     return;
   }
 
-  const knownRoom = findKnownInitiatorRoom(code);
-  if (!knownRoom) {
-    setStatus("Room codes are for the initiator to rejoin. Joiners must use the invitation link sent by email.");
-    return;
-  }
-
+  // Room codes are random, hard-to-guess recovery credentials. Do not require
+  // this device to have seen the room before, so the initiator can rejoin from
+  // another phone or computer using the same code.
   setStatus("Checking your session…");
   try {
     const room = db.ref("rooms/" + code);
@@ -1540,9 +1561,6 @@ async function joinSession() {
     const ownerName = normalizeUsername(ownerSnapshot.val());
     if (!ownerName) {
       throw new Error("No session exists for that room code. Check the code or start a new session.");
-    }
-    if (knownRoom.username && ownerName.toLowerCase() !== knownRoom.username.toLowerCase()) {
-      throw new Error("That room code does not match your saved initiator session on this device.");
     }
     const resetAt = Number(resetSnapshot.val());
     if (Number.isFinite(resetAt) && resetAt > 0) {
@@ -1696,7 +1714,12 @@ window.addEventListener("load", () => {
   const inviteParam = params.get("invite");
 
   if (startParam) {
+    // Backward compatibility for older invitation URLs that included the room code.
     joinRoomByCode(startParam, inviteParam);
+    return;
+  }
+  if (inviteParam) {
+    joinRoomByInviteToken(inviteParam);
     return;
   }
 
