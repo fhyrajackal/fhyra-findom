@@ -707,7 +707,7 @@ async function changeSessionRate() {
     updateDisplay();
     renderRateControl();
     if (currentRoomCode === roomCodeForUpdate && !endTime) {
-      setStatus(`Rate changed to $${newRate} / min. The new rate applies from now on.`);
+      setStatus(`Rate changed to $${newRate} / min.`);
     }
   } catch (error) {
     console.error("Could not update the tribute rate:", error);
