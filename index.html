@@ -467,6 +467,20 @@
   #drainStartButton { background: linear-gradient(180deg, #b0153c, #6f0d29); }
 
   #drainPlay { display: none; }
+  #drainOptions { display: none; margin: 0.6rem 0 0.2rem; }
+  #drainOptionsLabel { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.4rem; line-height: 1.35; }
+  .drain-options-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; }
+  .drain-options-grid button {
+    flex-direction: column; gap: 0; margin: 0; min-height: 58px; padding: 0.35rem 0.3rem;
+    font-size: 1.05rem; font-weight: 750; color: var(--soft);
+    background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line-strong); box-shadow: none;
+  }
+  .drain-options-grid button small { display: block; font-size: 0.72rem; font-weight: 500; opacity: 0.85; }
+  .drain-options-grid button.selected {
+    color: #fff; border-color: transparent;
+    background: linear-gradient(180deg, #e23a62, var(--accent-dark));
+    box-shadow: 0 0 16px rgba(255, 90, 125, 0.45);
+  }
   #drainTimer { color: var(--soft); font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
   .drain-progress { height: 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); overflow: hidden; margin: 0.45rem auto 0.3rem; max-width: 260px; }
   #drainProgressFill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff7a95, #d42a52); border-radius: inherit; }
@@ -656,12 +670,23 @@
         <section class="card" id="drainSection" aria-live="polite">
           <div class="card-kicker">Drain</div>
           <button type="button" id="drainStartButton">Click to be Drained</button>
-          <div id="drainHint" style="display:none;">One minute. Every click drains another $2.00 from you. Go as fast as you can, clickslut.</div>
+          <div id="drainHint" style="display:none;">Default drain rate is $1.00/click for 30s. Go as fast as you can, clickslut.</div>
           <div id="drainJoinerLabel" style="display:none;">Waiting for the paypup to be drained…</div>
           <div id="drainPlay">
             <div id="drainHeading">Being drained</div>
             <div id="drainTimer">60.0s</div>
             <div class="drain-progress"><div id="drainProgressFill"></div></div>
+            <div id="drainOptions">
+              <div id="drainOptionsLabel">Choose your drain before the countdown ends. No choice = $1.00/click for 30s.</div>
+              <div class="drain-options-grid" id="drainOptionsGrid">
+                <button type="button" data-per-click="0.5" data-duration="60000">$0.50<small>/click · 60s</small></button>
+                <button type="button" data-per-click="1" data-duration="60000">$1.00<small>/click · 60s</small></button>
+                <button type="button" data-per-click="2" data-duration="60000">$2.00<small>/click · 60s</small></button>
+                <button type="button" data-per-click="0.5" data-duration="30000">$0.50<small>/click · 30s</small></button>
+                <button type="button" data-per-click="1" data-duration="30000">$1.00<small>/click · 30s</small></button>
+                <button type="button" data-per-click="2" data-duration="30000">$2.00<small>/click · 30s</small></button>
+              </div>
+            </div>
             <div id="drainTotal">$0.00</div>
             <div id="drainClicks">0 clicks</div>
             <button type="button" id="drainClickButton">CLICK</button>
@@ -765,9 +790,16 @@ let drainTickTimer = null;
 let drainSyncTimer = null;
 let drainFinalizing = false;
 let drainStartInProgress = false;
-const DRAIN_DURATION_MS = 60000;
+// Six options the initiator can pick during the countdown. Drains saved before this
+// feature have no perClick/durationMs and keep the original $2/click for 60s.
+const DRAIN_OPTIONS = [
+  { perClick: 0.5, durationMs: 60000 }, { perClick: 1, durationMs: 60000 }, { perClick: 2, durationMs: 60000 },
+  { perClick: 0.5, durationMs: 30000 }, { perClick: 1, durationMs: 30000 }, { perClick: 2, durationMs: 30000 }
+];
+const DRAIN_DEFAULT_OPTION = { perClick: 1, durationMs: 30000 };
+const DRAIN_LEGACY_OPTION = { perClick: 2, durationMs: 60000 };
+let drainChoiceInProgress = false;
 const DRAIN_COUNTDOWN_MS = 3000;     // "Get ready" before clicks count
-const DRAIN_PER_CLICK = 2;
 const DRAIN_MAX_CLICKS = 1500;       // sanity cap (25 clicks/second)
 const DRAIN_JOINER_GRACE_MS = 5000;  // joiner finalizes if the initiator went offline
 const ACTIVE_SESSION_KEY = "worshipTrueGoddess.activeSession.v1";
@@ -1415,13 +1447,27 @@ async function confirmExtraTribute() {
 //   pending  -> time is up, amount fixed, waiting for the joiner to confirm
 //   confirmed / empty -> finished; a new drain can be started
 
+function getDrainConfig(state) {
+  if (!state || typeof state !== "object") return null;
+  if (state.perClick === undefined && state.durationMs === undefined) return DRAIN_LEGACY_OPTION;
+  const perClick = Number(state.perClick);
+  const durationMs = Number(state.durationMs);
+  return DRAIN_OPTIONS.find((o) => o.perClick === perClick && o.durationMs === durationMs) || null;
+}
+
+function describeDrainOption(config) {
+  return `${formatMoney(config.perClick)}/click for ${config.durationMs / 1000}s`;
+}
+
 function isValidDrainState(state) {
   if (!state || typeof state !== "object" || !state.id) return false;
+  const config = getDrainConfig(state);
+  if (!config) return false;
   const startedAt = Number(state.startedAt);
   const endsAt = Number(state.endsAt);
   const clicks = Number(state.clicks || 0);
   return Number.isFinite(startedAt) && startedAt > 0 &&
-    endsAt === startedAt + DRAIN_DURATION_MS &&
+    endsAt === startedAt + config.durationMs &&
     Number.isInteger(clicks) && clicks >= 0 && clicks <= DRAIN_MAX_CLICKS;
 }
 
@@ -1445,9 +1491,62 @@ function getDisplayedDrainClicks(state) {
   return stored;
 }
 
-function updateDrainNumbers(clicks) {
-  document.getElementById("drainTotal").textContent = formatMoney(clicks * DRAIN_PER_CLICK);
-  document.getElementById("drainClicks").textContent = `${clicks} ${clicks === 1 ? "click" : "clicks"} × $${DRAIN_PER_CLICK.toFixed(2)}`;
+function updateDrainNumbers(clicks, config = getDrainConfig(drainState) || DRAIN_DEFAULT_OPTION) {
+  document.getElementById("drainTotal").textContent = formatMoney(clicks * config.perClick);
+  document.getElementById("drainClicks").textContent = `${clicks} ${clicks === 1 ? "click" : "clicks"} × ${formatMoney(config.perClick)}`;
+}
+
+function renderDrainOptions(state, inCountdown) {
+  const box = document.getElementById("drainOptions");
+  const grid = document.getElementById("drainOptionsGrid");
+  const label = document.getElementById("drainOptionsLabel");
+  box.style.display = inCountdown ? "block" : "none";
+  if (!inCountdown) return;
+  const config = getDrainConfig(state) || DRAIN_DEFAULT_OPTION;
+  grid.style.display = isInitiator ? "grid" : "none";
+  grid.querySelectorAll("button").forEach((button) => {
+    const selected = Number(button.dataset.perClick) === config.perClick &&
+      Number(button.dataset.duration) === config.durationMs;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+    button.disabled = drainChoiceInProgress;
+  });
+  label.textContent = isInitiator
+    ? (state.optionChosen
+        ? `Chosen: ${describeDrainOption(config)}. You can still switch until the countdown ends.`
+        : `Choose your drain before the countdown ends. No choice = ${describeDrainOption(DRAIN_DEFAULT_OPTION)}.`)
+    : (state.optionChosen
+        ? `The paypup chose ${describeDrainOption(config)}.`
+        : `The paypup is choosing their drain… (default ${describeDrainOption(DRAIN_DEFAULT_OPTION)})`);
+}
+
+async function chooseDrainOption(perClick, durationMs) {
+  const state = drainState;
+  if (!isInitiator || !drainRef || !state || state.status !== "running" || drainChoiceInProgress) return;
+  const option = DRAIN_OPTIONS.find((o) => o.perClick === perClick && o.durationMs === durationMs);
+  if (!option || getServerNow() >= Number(state.startedAt)) return;
+  const id = state.id;
+  drainChoiceInProgress = true;
+  try {
+    const result = await drainRef.transaction((current) => {
+      if (!current || current.id !== id || current.status !== "running") return;
+      // Choices lock the moment the countdown ends.
+      if (getServerNow() >= Number(current.startedAt)) return;
+      return {
+        ...current,
+        perClick: option.perClick,
+        durationMs: option.durationMs,
+        endsAt: Number(current.startedAt) + option.durationMs,
+        optionChosen: true
+      };
+    });
+    if (!result.committed) setStatus("Too late — the countdown already ended.");
+  } catch (error) {
+    console.error("Could not choose the drain option:", error);
+    setStatus("Could not save your choice. Check your connection.");
+  } finally {
+    drainChoiceInProgress = false;
+  }
 }
 
 function drainTick() {
@@ -1460,6 +1559,8 @@ function drainTick() {
   const timerEl = document.getElementById("drainTimer");
   const clickButton = document.getElementById("drainClickButton");
   const statusEl = document.getElementById("drainStatus");
+  const config = getDrainConfig(state) || DRAIN_DEFAULT_OPTION;
+  renderDrainOptions(state, now < Number(state.startedAt));
 
   if (now < Number(state.startedAt)) {
     const secs = Math.ceil((Number(state.startedAt) - now) / 1000);
@@ -1472,11 +1573,11 @@ function drainTick() {
 
   const remaining = Number(state.endsAt) - now;
   document.getElementById("drainProgressFill").style.width =
-    `${Math.max(0, Math.min(100, (remaining / DRAIN_DURATION_MS) * 100))}%`;
+    `${Math.max(0, Math.min(100, (remaining / config.durationMs) * 100))}%`;
   if (remaining > 0) {
     timerEl.textContent = `${(remaining / 1000).toFixed(1)}s`;
     clickButton.disabled = false;
-    statusEl.textContent = isInitiator ? "Click! Every click is another $2.00." : "Watching the paypup drain themself…";
+    statusEl.textContent = isInitiator ? `Click! Every click is another ${formatMoney(config.perClick)}.` : "Watching the paypup drain themself…";
     return;
   }
 
@@ -1509,6 +1610,7 @@ function renderDrainPanel() {
     hint.style.display = isInitiator ? "block" : "none";
     joinerLabel.style.display = isInitiator ? "none" : "block";
     play.style.display = "none";
+    renderDrainOptions(null, false);
     return;
   }
 
@@ -1540,6 +1642,7 @@ function renderDrainPanel() {
 
   // pending: amount is fixed
   stopDrainTicker();
+  renderDrainOptions(state, false);
   const amount = Number(state.amount);
   const clicks = Number(state.clicks) || 0;
   document.getElementById("drainHeading").textContent = isInitiator ? "Your drain total" : "Drain total";
@@ -1571,7 +1674,10 @@ async function startDrain() {
     id: drainRef.push().key,
     status: "running",
     startedAt,
-    endsAt: startedAt + DRAIN_DURATION_MS,
+    endsAt: startedAt + DRAIN_DEFAULT_OPTION.durationMs,
+    perClick: DRAIN_DEFAULT_OPTION.perClick,
+    durationMs: DRAIN_DEFAULT_OPTION.durationMs,
+    optionChosen: false,
     clicks: 0,
     createdBy: myName || initiatorName || "Initiator"
   };
@@ -1650,10 +1756,11 @@ async function finalizeDrain() {
       let clicks = Number(current.clicks) || 0;
       if (isInitiator && drainLocalId === id) clicks = Math.max(clicks, drainLocalClicks);
       clicks = Math.min(DRAIN_MAX_CLICKS, clicks);
+      const config = getDrainConfig(current);
       return {
         ...current,
         clicks,
-        amount: clicks * DRAIN_PER_CLICK,
+        amount: Math.round(clicks * config.perClick * 100) / 100,
         status: clicks > 0 ? "pending" : "empty",
         finishedAt: getServerNow()
       };
@@ -1700,7 +1807,9 @@ function recordConfirmedDrain(state) {
       !sessionAccountUsername || !accountSessionsRef) return;
   const clicks = Number(state.clicks);
   const amount = Number(state.amount);
-  if (!Number.isInteger(clicks) || clicks < 1 || amount !== clicks * DRAIN_PER_CLICK) return;
+  const config = getDrainConfig(state);
+  if (!config || !Number.isInteger(clicks) || clicks < 1 ||
+      Math.abs(amount - clicks * config.perClick) > 0.001) return;
 
   const entry = {
     amount: Math.round(amount * 100) / 100,
@@ -2423,6 +2532,10 @@ document.getElementById("copyCodeButton").addEventListener("click", copyCode);
 document.getElementById("extraTributeStartButton").addEventListener("click", startExtraTributeDraw);
 document.getElementById("drainStartButton").addEventListener("click", startDrain);
 document.getElementById("drainClickButton").addEventListener("click", registerDrainClick);
+document.querySelectorAll("#drainOptionsGrid button").forEach((button) => {
+  button.addEventListener("click", () =>
+    chooseDrainOption(Number(button.dataset.perClick), Number(button.dataset.duration)));
+});
 document.getElementById("changeRateButton").addEventListener("click", changeSessionRate);
 document.querySelectorAll("#ratePresets button").forEach((preset) => {
   preset.addEventListener("click", () => {
