@@ -391,7 +391,7 @@
     line-height: 1.42;
   }
   #messages:empty::before {
-    content: "No messages yet. Speak only when spoken to… or beg.";
+    content: "No messages yet. Speak only when spoken to… or send and beg for permission.";
     margin: auto;
     color: #8e5d69;
     font-size: 0.85rem;
@@ -656,7 +656,7 @@
         <section class="card" id="drainSection" aria-live="polite">
           <div class="card-kicker">Drain</div>
           <button type="button" id="drainStartButton">Click to be Drained</button>
-          <div id="drainHint" style="display:none;">One minute. Every click drains another $2.00 from you. Click as fast as you can, paypup.</div>
+          <div id="drainHint" style="display:none;">One minute. Every click drains another $2.00 from you. Go as fast as you can, clickslut.</div>
           <div id="drainJoinerLabel" style="display:none;">Waiting for the paypup to be drained…</div>
           <div id="drainPlay">
             <div id="drainHeading">Being drained</div>
@@ -673,7 +673,7 @@
               </div>
             </div>
             <button type="button" id="confirmDrainButton" style="display:none">Confirm drain</button>
-            <div id="drainNote">The drain will be added to the lifetime total only after being sent the displayed amount.</div>
+            <div id="drainNote">The drained amount will be added to the lifetime total once payment has been confirmed.</div>
           </div>
         </section>
 
@@ -1053,7 +1053,7 @@ function getAccountTierMessage(total) {
     return "Keep amusing me, my delectably eager toy. I'm going to ruin you, you know?";
   }
   if (total <= 5000) {
-    return "But you desperately *want* to, *need* to worship the perfection that is me, don't you, little food thing?";
+    return "But you desperately *want* to, *need* to, worship the perfection that is me, don't you, little food thing?";
   }
   if (total <= 10000) {
     return "You're fulfilling your true purpose in life. Being my toy. My slave. My snack.";
@@ -1466,7 +1466,7 @@ function drainTick() {
     timerEl.textContent = `Get ready… ${secs}`;
     document.getElementById("drainProgressFill").style.width = "100%";
     clickButton.disabled = true;
-    statusEl.textContent = isInitiator ? "Get your finger ready, paypup." : "The paypup is about to be drained…";
+    statusEl.textContent = isInitiator ? "Get your finger ready, clickslut." : "The paypup is about to be drained…";
     return;
   }
 
