@@ -16,27 +16,51 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet">
+
 <style>
+  :root {
+    --bg: #120306;
+    --card: rgba(22, 6, 11, 0.78);
+    --card-strong: rgba(26, 7, 13, 0.9);
+    --line: rgba(190, 70, 100, 0.34);
+    --line-strong: rgba(220, 90, 120, 0.6);
+    --text: #fbeef1;
+    --muted: #b98793;
+    --soft: #ffc2ce;
+    --accent: #d42a52;
+    --accent-dark: #a51a3c;
+    --accent-glow: rgba(255, 90, 125, 0.45);
+    --pink: #ff7a95;
+    --danger: #7f1d1d;
+    --paypal: #0070ba;
+    --throne: #7c3aed;
+    --ok: #6fdc9b;
+    --radius: 18px;
+    --radius-sm: 12px;
+    --display: "Cormorant Garamond", "Times New Roman", serif;
+    --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; margin: 0; }
+  html, body { margin: 0; min-height: 100%; }
+  [hidden] { display: none !important; }
+
   body {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #120306;
-    color: #fff;
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
     min-height: 100vh;
     min-height: 100dvh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 1rem;
-    padding-top: max(1rem, env(safe-area-inset-top));
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-    padding-left: max(1rem, env(safe-area-inset-left));
-    padding-right: max(1rem, env(safe-area-inset-right));
-    position: relative;
+    padding: max(1rem, env(safe-area-inset-top)) max(0.9rem, env(safe-area-inset-right))
+             max(1.5rem, env(safe-area-inset-bottom)) max(0.9rem, env(safe-area-inset-left));
     overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
   }
+
+  /* ---------- Living background ---------- */
   body::before {
     content: "";
     position: fixed;
@@ -47,7 +71,7 @@
       radial-gradient(circle at 50% 30%, rgba(180, 50, 70, 0.3) 0%, transparent 40%),
       radial-gradient(ellipse at 40% 80%, rgba(60, 5, 15, 0.85) 0%, transparent 55%),
       radial-gradient(circle at 60% 70%, rgba(200, 80, 40, 0.15) 0%, transparent 35%);
-    animation: stomachPulse 14s ease-in-out infinite, stomachShift 20s linear infinite;
+    animation: stomachPulse 14s ease-in-out infinite;
     z-index: -3;
   }
   body::after {
@@ -66,21 +90,11 @@
     0%, 100% { transform: scale(1) rotate(0deg); }
     50% { transform: scale(1.06) rotate(0.5deg); }
   }
-  @keyframes stomachShift {
-    0% { background-position: 0% 0%; }
-    100% { background-position: 2% 3%; }
-  }
   @keyframes subtleGlow {
     0%, 100% { opacity: 0.7; }
     50% { opacity: 1; }
   }
-  #bubbles {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: -1;
-    overflow: hidden;
-  }
+  #bubbles { position: fixed; inset: 0; pointer-events: none; z-index: -1; overflow: hidden; }
   .bubble {
     position: absolute;
     bottom: -40px;
@@ -96,275 +110,345 @@
     90% { opacity: 0.7; }
     100% { transform: translateY(-110vh) scale(1.1); opacity: 0; }
   }
-  h1 {
-    margin: 0.5rem 0 1.2rem;
-    font-weight: 300;
-    letter-spacing: 1px;
-    text-align: center;
-    text-shadow: 0 0 25px rgba(180, 40, 60, 0.6);
-    font-size: clamp(1.5rem, 7vw, 2.1rem);
+
+  /* ---------- Layout ---------- */
+  .app { width: 100%; max-width: 480px; margin: 0 auto; }
+  .columns { display: flex; flex-direction: column; gap: 0.85rem; }
+  .col { display: flex; flex-direction: column; gap: 0.85rem; min-width: 0; }
+  .col:empty { display: none; }
+
+  @media (min-width: 900px) {
+    body.in-session .app { max-width: 1080px; }
+    body.in-session .columns { flex-direction: row; align-items: flex-start; }
+    body.in-session .col-main { flex: 1.25 1 0; }
+    body.in-session .col-side { flex: 1 1 0; position: sticky; top: 1rem; }
   }
-  .container {
-    display: flex;
-    gap: 0.8rem;
-    flex-wrap: wrap;
-    justify-content: center;
-    width: 100%;
-    max-width: 520px;
-  }
-  .box {
-    background: rgba(15, 4, 8, 0.72);
-    border: 1px solid rgba(160, 50, 70, 0.45);
-    border-radius: 16px;
-    padding: 1.4rem 1rem;
-    min-width: 140px;
-    flex: 1 1 160px;
-    text-align: center;
-    box-shadow: 0 10px 40px rgba(80, 10, 25, 0.7), inset 0 0 25px rgba(120, 30, 50, 0.25);
-    backdrop-filter: blur(6px);
-  }
-  .box h2 {
-    margin: 0 0 0.6rem;
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: #d08090;
+
+  .hero { text-align: center; margin: 0.4rem 0 1rem; }
+  .eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.28em;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    color: var(--muted);
   }
-  .value {
-    font-size: clamp(2rem, 12vw, 2.8rem);
-    font-weight: 700;
+  h1 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(2rem, 9vw, 3rem);
+    line-height: 1.05;
+    margin: 0.35rem 0 0;
+    letter-spacing: 0.5px;
+    background: linear-gradient(180deg, #fff 0%, #ffc2ce 60%, #ff8aa3 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(180, 40, 60, 0.35);
+  }
+
+  /* ---------- Cards ---------- */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1.1rem;
+    box-shadow: 0 12px 40px rgba(60, 5, 20, 0.55), inset 0 0 30px rgba(120, 30, 50, 0.18);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    text-align: center;
+  }
+  .card-title {
+    font-family: var(--display);
+    font-size: 1.45rem;
+    font-weight: 600;
+    color: var(--soft);
+    margin: 0 0 0.75rem;
+    line-height: 1.15;
+  }
+  .card-kicker {
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.25rem;
+  }
+  .hint { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 0.5rem 0 0; }
+
+  /* ---------- Stats ---------- */
+  .stats { padding: 1rem 0.9rem 0.85rem; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+  .stat {
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(160, 50, 70, 0.25);
+    border-radius: 14px;
+    padding: 0.85rem 0.4rem;
+    min-width: 0;
+  }
+  .stat-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #d08090;
+    margin-bottom: 0.35rem;
+  }
+  .stat-value {
+    font-size: clamp(1.45rem, 7.4vw, 2.3rem);
+    font-weight: 750;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -1px;
+    letter-spacing: -0.5px;
+    white-space: nowrap;
     text-shadow: 0 0 18px rgba(255, 100, 120, 0.35);
   }
-  #amount { color: #ff7a95; }
-  #time { color: #ffc2ce; }
-  .controls, .room, .payment-buttons, .end-section {
-    margin-top: 1.4rem;
-    text-align: center;
-    width: 100%;
-    max-width: 420px;
+  @media (min-width: 900px) { body.in-session .stat-value { font-size: 2.4rem; } }
+  #amount { color: var(--pink); }
+  #time { color: var(--soft); }
+  .chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.7rem; }
+  .chips:not(:has(.chip:not([hidden]))) { display: none; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--soft);
+    font-variant-numeric: tabular-nums;
   }
-  button, input {
-    padding: 1rem 1.3rem;
-    font-size: 1.05rem;
-    border-radius: 12px;
-    border: none;
-    margin: 0.35rem;
-    min-height: 52px;
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .chip.online .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+
+  #status {
+    text-align: center;
+    color: #e6a9b6;
+    font-size: 0.92rem;
+    line-height: 1.4;
+    min-height: 1.3em;
+    padding: 0 0.5rem;
+  }
+  #status:empty { display: none; }
+
+  /* ---------- Form controls ---------- */
+  button, .btn, input {
+    font: inherit;
+    border-radius: var(--radius-sm);
     -webkit-appearance: none;
     appearance: none;
   }
-  button {
-    background: #c0264a;
-    color: white;
+  button, .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    min-height: 50px;
+    padding: 0.8rem 1.1rem;
+    margin: 0.35rem 0 0;
+    border: 1px solid transparent;
+    background: linear-gradient(180deg, #e23a62, var(--accent-dark));
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.2px;
     cursor: pointer;
-    font-weight: 500;
-    width: min(100%, 280px);
+    text-decoration: none;
+    box-shadow: 0 6px 18px rgba(160, 20, 50, 0.35);
+    transition: transform 0.08s ease, filter 0.15s ease, box-shadow 0.15s ease;
   }
-  button:active { background: #a21a3a; transform: scale(0.98); }
-  button:disabled { opacity: 0.42; cursor: not-allowed; filter: grayscale(0.45); }
-  button.end-btn { background: #7f1d1d; }
-  button.end-btn:active { background: #991b1b; }
-  button.pay-btn { background: #0070ba; width: min(100%, 220px); }
-  button.pay-btn:active { background: #005ea6; }
-  button.throne-btn { background: #7c3aed; width: min(100%, 220px); }
-  button.throne-btn:active { background: #6d28d9; }
+  button:hover:not(:disabled), .btn:hover { filter: brightness(1.08); }
+  button:active:not(:disabled), .btn:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.42; cursor: not-allowed; filter: grayscale(0.45); box-shadow: none; }
+  button:focus-visible, .btn:focus-visible, input:focus-visible {
+    outline: 2px solid var(--soft);
+    outline-offset: 2px;
+  }
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--line-strong);
+    color: var(--soft);
+    box-shadow: none;
+  }
+  .btn-danger { background: linear-gradient(180deg, #9b2424, var(--danger)); }
+  .btn-small { width: auto; min-height: 38px; padding: 0.45rem 0.9rem; font-size: 0.88rem; margin: 0; }
+  .btn-paypal { background: var(--paypal); box-shadow: 0 6px 18px rgba(0, 112, 186, 0.3); }
+  .btn-throne { background: var(--throne); box-shadow: 0 6px 18px rgba(124, 58, 237, 0.3); }
+  button.armed {
+    background: linear-gradient(180deg, #ff4f78, #c0264a);
+    animation: armedPulse 0.7s ease-in-out infinite alternate;
+  }
+  @keyframes armedPulse { from { box-shadow: 0 0 0 0 var(--accent-glow); } to { box-shadow: 0 0 0 6px transparent; } }
+  button.busy { position: relative; color: transparent !important; }
+  button.busy::after {
+    content: "";
+    position: absolute;
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   input {
-    background: rgba(25, 6, 10, 0.85);
-    color: white;
-    border: 1px solid rgba(160, 50, 70, 0.5);
-    width: min(100%, 280px);
+    width: 100%;
+    min-height: 50px;
+    padding: 0.75rem 0.95rem;
+    margin: 0;
+    background: rgba(10, 2, 5, 0.7);
+    color: var(--text);
+    border: 1px solid var(--line-strong);
     font-size: 16px;
   }
-  .room, .end-section { font-size: 1.05rem; line-height: 1.5; }
-  .room span, .end-section span {
-    font-family: ui-monospace, monospace;
-    background: rgba(35, 8, 12, 0.85);
-    padding: 0.45rem 0.8rem;
-    border-radius: 8px;
-    border: 1px solid rgba(160, 50, 70, 0.35);
-    word-break: break-all;
-    display: inline-block;
-    margin: 0.3rem 0;
+  input::placeholder { color: #8e5d69; }
+  .field-label {
+    display: block;
+    text-align: left;
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin: 0 0 0.3rem 0.15rem;
   }
-  .payment-buttons { display: none; }
-  .payment-buttons a { text-decoration: none; display: block; margin: 0.4rem 0; }
-  #status {
-    margin: 0.6rem 0 0.2rem;
-    color: #d08090;
-    font-size: 0.95rem;
-    min-height: 1.3em;
-    text-align: center;
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin: 1.25rem 0 1rem;
   }
-  #chatBox {
-    display: none;
-    width: 100%;
-    max-width: 420px;
-    margin-top: 1.2rem;
-    background: rgba(15, 4, 8, 0.8);
-    border: 1px solid rgba(160, 50, 70, 0.45);
-    border-radius: 16px;
-    padding: 0.8rem;
-    backdrop-filter: blur(6px);
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  /* ---------- Room bar ---------- */
+  .room-row { display: flex; align-items: center; gap: 0.7rem; text-align: left; }
+  .room-meta { flex: 1; min-width: 0; }
+  .room-meta .field-label { margin: 0 0 0.15rem; }
+  #roomCode {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+    color: var(--soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+  #roomDisplay .hint { text-align: left; margin-top: 0.4rem; }
+  #endSessionButton { margin-top: 0.75rem; }
+
+  /* ---------- Rate control ---------- */
+  #currentRateLabel { color: var(--pink); font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 0.6rem; }
+  #rateControlRow { display: flex; gap: 0.5rem; align-items: stretch; }
+  #rateControlRow .rate-input-wrap { position: relative; flex: 0 0 116px; }
+  #rateControlRow .rate-input-wrap::before {
+    content: "$";
+    position: absolute;
+    left: 0.8rem; top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+  }
+  #rateInput { padding-left: 1.7rem; text-align: left; }
+  #changeRateButton { margin: 0; flex: 1; }
+  .rate-presets { display: flex; gap: 0.35rem; justify-content: center; flex-wrap: wrap; margin-top: 0.55rem; }
+  .rate-presets button {
+    width: auto; min-height: 34px; margin: 0; padding: 0.3rem 0.75rem;
+    font-size: 0.82rem; font-weight: 600;
+    background: rgba(255, 255, 255, 0.04); border-color: var(--line); color: var(--soft); box-shadow: none;
+  }
+
+  /* ---------- End section ---------- */
+  .end-amount {
+    font-size: clamp(2.6rem, 13vw, 3.4rem);
+    font-weight: 800;
+    color: var(--pink);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1px;
+    text-shadow: 0 0 24px rgba(255, 100, 120, 0.45);
+  }
+  .payment-buttons { display: none; margin-top: 0.6rem; }
+  .pay-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .pay-grid .btn { margin: 0; }
+  #sessionPaymentMessage { color: var(--ok); font-size: 0.85rem; margin-top: 0.4rem; min-height: 1em; }
+
+  /* ---------- Chat ---------- */
+  #chatBox { display: none; padding: 0.75rem; text-align: left; }
+  .chat-head { display: flex; justify-content: space-between; align-items: baseline; padding: 0.1rem 0.25rem 0.55rem; }
+  .chat-head .card-title { margin: 0; font-size: 1.25rem; }
   #messages {
-    height: 180px;
+    height: clamp(280px, 42vh, 460px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 0.5rem;
+    overscroll-behavior: contain;
+    padding: 0.6rem;
     background: rgba(0, 0, 0, 0.3);
-    border-radius: 10px;
-    margin-bottom: 0.7rem;
-    font-size: 0.95rem;
-    line-height: 1.45;
-  }
-  #messages div {
-    margin: 0.35rem 0;
-    padding: 0.45rem 0.7rem;
-    border-radius: 8px;
-    word-wrap: break-word;
-  }
-  .msg-self { background: rgba(160, 40, 60, 0.4); text-align: right; }
-  .msg-other { background: rgba(80, 20, 40, 0.4); }
-  #chatRow {
+    border-radius: 12px;
+    margin-bottom: 0.6rem;
     display: flex;
+    flex-direction: column;
     gap: 0.4rem;
-    align-items: center;
+    font-size: 0.95rem;
+    line-height: 1.42;
   }
-  #chatInput {
-    flex: 1;
-    margin: 0;
-    width: auto;
-    min-width: 0;
-  }
-  #sendBtn {
-    width: auto;
-    flex-shrink: 0;
-    padding-left: 1.1rem;
-    padding-right: 1.1rem;
-  }
-  #accountSummary {
-    display: none;
-    width: 100%;
-    max-width: 420px;
-    margin-top: 0.75rem;
-    padding: 1rem;
-    border: 1px solid rgba(160, 50, 70, 0.5);
-    border-radius: 14px;
-    background: rgba(15, 4, 8, 0.82);
-    box-shadow: 0 8px 28px rgba(80, 10, 25, 0.45);
+  #messages:empty::before {
+    content: "No messages yet. Speak only when spoken to… or beg.";
+    margin: auto;
+    color: #8e5d69;
+    font-size: 0.85rem;
     text-align: center;
-    line-height: 1.5;
+    padding: 1rem;
   }
-  #accountUsername {
-    color: #ffc2ce;
-    font-weight: 600;
-    overflow-wrap: anywhere;
-  }
-  #accountTotal {
-    margin-top: 0.35rem;
-    color: #ff7a95;
-    font-size: 1.2rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-  #accountMessage {
-    margin-top: 0.6rem;
-    color: #f4d6dc;
-  }
-  #accountNote {
-    margin-top: 0.4rem;
-    color: #b07080;
+  .msg { max-width: 84%; padding: 0.45rem 0.7rem 0.35rem; border-radius: 14px; word-wrap: break-word; overflow-wrap: anywhere; }
+  .msg-name { display: block; font-size: 0.72rem; font-weight: 700; color: var(--soft); margin-bottom: 0.1rem; }
+  .msg-time { display: block; font-size: 0.66rem; color: rgba(255, 220, 228, 0.5); text-align: right; margin-top: 0.15rem; }
+  .msg-self { align-self: flex-end; background: linear-gradient(180deg, rgba(200, 50, 80, 0.55), rgba(150, 30, 60, 0.5)); border-bottom-right-radius: 4px; }
+  .msg-other { align-self: flex-start; background: rgba(90, 22, 42, 0.55); border-bottom-left-radius: 4px; }
+  .msg-goddess.msg-other { border: 1px solid rgba(255, 150, 175, 0.35); }
+  .msg-system {
+    align-self: center;
+    max-width: 92%;
+    background: transparent;
+    color: var(--muted);
     font-size: 0.8rem;
-  }
-  #extraTributeSection {
-    display: none;
-    width: 100%;
-    max-width: 420px;
-    margin-top: 1rem;
-    padding: 1rem;
-    border: 1px solid rgba(190, 70, 100, 0.58);
-    border-radius: 16px;
-    background: rgba(15, 4, 8, 0.86);
-    box-shadow: 0 8px 28px rgba(80, 10, 25, 0.48);
+    font-style: italic;
     text-align: center;
+    padding: 0.2rem 0.5rem;
   }
-  #extraTributeHint {
-    color: #b07080;
-    font-size: 0.82rem;
-    line-height: 1.4;
-    margin: 0.4rem 0 0.65rem;
-  }
-  #extraTributeDraw {
-    display: none;
-    margin-top: 0.25rem;
-  }
-  #extraTributeHeading {
-    color: #ffc2ce;
-    margin: 0.2rem 0 0.65rem;
-  }
-  #extraTributeAmount {
-    color: #ff7a95;
-    font-size: clamp(2.5rem, 12vw, 3.4rem);
-    font-weight: 800;
-    letter-spacing: -1px;
-    font-variant-numeric: tabular-nums;
-    text-shadow: 0 0 22px rgba(255, 100, 120, 0.42);
-    margin: 0.35rem 0;
-  }
-  #extraTributeAmount.spinning {
-    animation: extraTributePulse 0.18s ease-in-out infinite alternate;
-  }
-  @keyframes extraTributePulse {
-    from { transform: scale(0.96) rotate(-1deg); opacity: 0.78; }
-    to { transform: scale(1.04) rotate(1deg); opacity: 1; }
-  }
-  #extraTributeStatus, #extraTributeNote {
-    color: #d8a2ae;
-    font-size: 0.9rem;
-    line-height: 1.45;
-    margin-top: 0.5rem;
-  }
-  #extraTributeNote {
-    color: #b07080;
-    font-size: 0.78rem;
-  }
-  #extraTributePaymentButtons { display: none; }
+  #chatRow { display: flex; gap: 0.45rem; align-items: stretch; }
+  #chatInput { flex: 1; min-width: 0; }
+  #sendBtn { width: auto; margin: 0; padding: 0 1.2rem; flex-shrink: 0; }
 
-  /* ===== Click to be Drained ===== */
-  #drainSection {
-    display: none;
-    width: 100%;
-    max-width: 420px;
-    margin-top: 1rem;
-    padding: 1rem;
-    border: 1px solid rgba(190, 70, 100, 0.58);
-    border-radius: 16px;
-    background: rgba(15, 4, 8, 0.86);
-    box-shadow: 0 8px 28px rgba(80, 10, 25, 0.48);
-    text-align: center;
-  }
-  #drainStartButton { background: #8e1235; }
-  #drainStartButton:active { background: #6f0d29; }
-  #drainHint {
-    color: #b07080;
-    font-size: 0.82rem;
-    line-height: 1.4;
-    margin: 0.4rem 0 0.2rem;
-  }
-  #drainJoinerLabel { color: #ffc2ce; margin-bottom: 0.2rem; }
-  #drainPlay { display: none; }
-  #drainHeading { color: #ffc2ce; margin: 0.2rem 0 0.4rem; }
-  #drainTimer {
-    color: #ffc2ce;
-    font-size: 1.5rem;
-    font-weight: 700;
+  /* ---------- Account ---------- */
+  #accountSummary { display: none; }
+  #accountUsername { color: var(--soft); font-weight: 600; overflow-wrap: anywhere; }
+  #accountTotal {
+    margin-top: 0.3rem;
+    color: var(--pink);
+    font-size: 1.9rem;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
   }
-  #drainTotal {
-    color: #ff7a95;
+  .tier-row { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); margin: 0.7rem 0 0.3rem; }
+  .tier-bar { height: 8px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); overflow: hidden; border: 1px solid rgba(160, 50, 70, 0.3); }
+  .tier-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #a51a3c, #ff7a95); border-radius: inherit; transition: width 0.6s ease; }
+  #accountMessage {
+    margin-top: 0.85rem;
+    color: #f4d6dc;
+    font-family: var(--display);
+    font-size: 1.2rem;
+    font-style: italic;
+    line-height: 1.35;
+  }
+  #accountNote { margin-top: 0.6rem; color: #8e5d69; font-size: 0.75rem; }
+
+  /* ---------- Rituals (extra tribute + drain) ---------- */
+  #extraTributeSection, #drainSection { display: none; }
+  #extraTributeHint, #drainHint { color: var(--muted); font-size: 0.82rem; line-height: 1.4; margin: 0.55rem 0 0; }
+  #extraTributeJoinerLabel, #drainJoinerLabel { color: var(--muted); font-size: 0.9rem; font-style: italic; }
+  #extraTributeDraw { display: none; }
+  #extraTributeHeading, #drainHeading { color: var(--soft); margin: 0.1rem 0 0.35rem; font-size: 0.95rem; }
+  #extraTributeAmount, #drainTotal {
+    color: var(--pink);
     font-size: clamp(2.5rem, 12vw, 3.4rem);
     font-weight: 800;
     letter-spacing: -1px;
@@ -372,197 +456,241 @@
     text-shadow: 0 0 22px rgba(255, 100, 120, 0.42);
     margin: 0.2rem 0;
   }
-  #drainClicks { color: #d8a2ae; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  #extraTributeAmount.spinning { animation: extraTributePulse 0.18s ease-in-out infinite alternate; }
+  @keyframes extraTributePulse {
+    from { transform: scale(0.96) rotate(-1deg); opacity: 0.78; }
+    to { transform: scale(1.04) rotate(1deg); opacity: 1; }
+  }
+  #extraTributeStatus, #drainStatus { color: #d8a2ae; font-size: 0.9rem; line-height: 1.45; margin-top: 0.45rem; }
+  #extraTributeNote, #drainNote { color: #8e5d69; font-size: 0.76rem; line-height: 1.4; margin-top: 0.6rem; }
+  #extraTributePaymentButtons, #drainPaymentButtons { display: none; }
+  #drainStartButton { background: linear-gradient(180deg, #b0153c, #6f0d29); }
+
+  #drainPlay { display: none; }
+  #drainTimer { color: var(--soft); font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .drain-progress { height: 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); overflow: hidden; margin: 0.45rem auto 0.3rem; max-width: 260px; }
+  #drainProgressFill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff7a95, #d42a52); border-radius: inherit; }
+  #drainClicks { color: #d8a2ae; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
   #drainClickButton {
     display: none;
-    width: 170px;
-    height: 170px;
+    width: 176px;
+    height: 176px;
     border-radius: 50%;
-    margin: 0.9rem auto 0.4rem;
-    font-size: 1.6rem;
+    margin: 0.9rem auto 0.3rem;
+    font-size: 1.7rem;
     font-weight: 800;
-    letter-spacing: 1px;
+    letter-spacing: 2px;
+    border: 0;
     background: radial-gradient(circle at 35% 30%, #ff5a7e, #b0153c 65%, #6d0a24);
-    box-shadow: 0 0 30px rgba(255, 70, 110, 0.55), inset 0 -6px 14px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 34px rgba(255, 70, 110, 0.55), inset 0 -6px 14px rgba(0, 0, 0, 0.35);
     touch-action: manipulation;
     user-select: none;
     -webkit-user-select: none;
     transition: transform 0.05s;
   }
-  #drainClickButton:active { transform: scale(0.93); }
-  #drainClickButton.pulse { transform: scale(0.93); }
-  #drainStatus, #drainNote {
-    color: #d8a2ae;
-    font-size: 0.9rem;
-    line-height: 1.45;
-    margin-top: 0.5rem;
-  }
-  #drainNote { color: #b07080; font-size: 0.78rem; }
-  #drainPaymentButtons { display: none; }
+  #drainClickButton:active:not(:disabled), #drainClickButton.pulse { transform: scale(0.92); }
+  #drainClickButton:disabled { filter: grayscale(0.6); opacity: 0.5; }
 
-  /* Keep room controls compact so the chat gets more screen space. */
-  .room, .end-section {
-    max-width: 340px;
-    margin-top: 0.55rem;
-    font-size: 0.92rem;
-    line-height: 1.3;
-  }
-  .room span, .end-section span {
-    padding: 0.25rem 0.55rem;
-    margin: 0.15rem 0;
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: max(1.2rem, env(safe-area-inset-bottom));
+    transform: translate(-50%, 140%);
+    background: rgba(30, 8, 14, 0.96);
+    border: 1px solid var(--line-strong);
+    color: var(--text);
+    padding: 0.7rem 1.1rem;
+    border-radius: 999px;
     font-size: 0.9rem;
-    border-radius: 7px;
-  }
-  .room p {
-    margin: 0.35rem 0 !important;
-    font-size: 0.82rem !important;
-  }
-  .room button, .end-section button {
-    width: min(100%, 180px);
-    min-height: 38px;
-    padding: 0.55rem 0.9rem;
-    margin: 0.15rem;
-    border-radius: 9px;
-    font-size: 0.9rem;
-  }
-  #chatBox {
-    margin-top: 0.65rem;
-    padding: 0.65rem;
-  }
-  #messages {
-    height: clamp(260px, 40vh, 420px);
-  }
-  #rateControlSection {
-    width: 100%;
-    max-width: 340px;
-    margin: 0.65rem auto 0;
-    padding: 0.75rem 0.85rem;
-    border: 1px solid rgba(190, 70, 100, 0.58);
-    border-radius: 12px;
-    background: rgba(15, 4, 8, 0.86);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transition: transform 0.25s ease, opacity 0.25s ease, visibility 0.25s;
+    z-index: 50;
+    max-width: calc(100vw - 2rem);
     text-align: center;
   }
-  #rateControlTitle { color: #ffc2ce; font-weight: 600; margin-bottom: 0.25rem; }
-  #currentRateLabel { color: #ff7a95; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 0.45rem; }
-  #rateControlSection label { display: block; color: #d8a2ae; font-size: 0.82rem; margin-bottom: 0.15rem; }
-  #rateControlRow { display: flex; align-items: center; justify-content: center; gap: 0.35rem; }
-  #rateInput { width: 104px; flex: 0 0 104px; min-height: 42px; padding: 0.5rem; margin: 0.15rem 0; font-size: 16px; }
-  #changeRateButton { width: auto; flex: 1; max-width: 170px; min-height: 42px; padding: 0.55rem 0.65rem; margin: 0.15rem 0; font-size: 0.9rem; border-radius: 9px; }
-  #rateControlNote { color: #b07080; font-size: 0.76rem; line-height: 1.35; margin-top: 0.4rem; }
+  #toast.show { transform: translate(-50%, 0); opacity: 1; visibility: visible; }
+
+  @media (prefers-reduced-motion: reduce) {
+    body::before, body::after, #extraTributeAmount.spinning, button.armed { animation: none; }
+    #bubbles { display: none; }
+    * { transition: none !important; }
+  }
 </style>
 </head>
 <body>
-  <div id="bubbles"></div>
-  <h1>Worship the true Goddess</h1>
+  <div id="bubbles" aria-hidden="true"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
 
-  <div class="container">
-    <div class="box">
-      <h2>Amount to be tributed</h2>
-      <div class="value" id="amount">$0.00</div>
-    </div>
-    <div class="box">
-      <h2>Time serving Fhyra</h2>
-      <div class="value" id="time">00:00:00</div>
-    </div>
-  </div>
+  <main class="app">
+    <header class="hero">
+      <div class="eyebrow">In service of Fhyra</div>
+      <h1>Worship the true Goddess</h1>
+    </header>
 
-  <div id="status"></div>
+    <div class="columns">
+      <div class="col col-main">
+        <section class="card stats" aria-label="Session totals">
+          <div class="stats-grid">
+            <div class="stat">
+              <div class="stat-label">Amount to be tributed</div>
+              <div class="stat-value" id="amount">$0.00</div>
+            </div>
+            <div class="stat">
+              <div class="stat-label">Time serving Fhyra</div>
+              <div class="stat-value" id="time">00:00:00</div>
+            </div>
+          </div>
+          <div class="chips">
+            <span class="chip" id="rateChip" hidden></span>
+            <span class="chip" id="presenceChip" hidden><span class="dot"></span><span id="presenceText"></span></span>
+          </div>
+        </section>
 
-  <div class="controls" id="controls">
-    <input type="text" id="initiatorNameInput" placeholder="Your username" maxlength="40" autocomplete="nickname" aria-label="Your username" />
-    <button onclick="initiateSession()">Initiate Session</button>
-    <p style="color:#b07080; margin:0.35rem 0 0; font-size:0.85rem;">Beg for Fhyra's attention, little toy~</p>
-    <div style="margin: 0.7rem 0; color: #b07080;">or</div>
-    <input type="text" id="roomInput" placeholder="Room code" autocapitalize="characters" autocomplete="off" aria-label="Room code" />
-    <button onclick="joinSession()">Rejoin Session</button>
-    <p style="color:#b07080; margin:0.35rem 0 0; font-size:0.85rem;">Room codes are for the paypup to rejoin or move between devices.</p>
-  </div>
+        <div id="status" role="status" aria-live="polite"></div>
 
-  <div class="room" id="roomDisplay" style="display:none;">
-    Room Code:<br>
-    <span id="roomCode"></span><br>
-    <button onclick="copyCode()">Copy Code</button>
-    <p style="color:#b07080; margin-top:0.8rem; font-size:0.95rem;">Keep this code to rejoin or move between devices.</p>
-    <div id="endButtonContainer"></div>
-  </div>
+        <section class="card" id="controls">
+          <h2 class="card-title">Begin a session</h2>
+          <label class="field-label" for="initiatorNameInput">Your username</label>
+          <input type="text" id="initiatorNameInput" placeholder="e.g. paypup" maxlength="40" autocomplete="nickname" enterkeyhint="go" />
+          <button type="button" id="initiateButton">Initiate Session</button>
+          <p class="hint">Beg for Fhyra's attention, little toy~</p>
 
-  <section id="rateControlSection" aria-live="polite" style="display:none;">
-    <div id="rateControlTitle">Set tribute rate</div>
-    <div id="currentRateLabel">Current rate: $3.00 / min</div>
-    <label for="rateInput">New rate ($1–$999 / min)</label>
-    <div id="rateControlRow">
-      <input type="number" id="rateInput" min="1" max="999" step="1" value="3" inputmode="numeric" aria-label="New tribute rate in dollars / min" />
-      <button type="button" id="changeRateButton">Change rate</button>
-    </div>
-    <div id="rateControlNote">The new rate applies from this moment forward.</div>
-  </section>
+          <div class="divider"><span>or rejoin</span></div>
 
-  <div class="end-section" id="endSection" style="display:none;">
-    <div>Session Ended</div>
-    <div id="resetSessionContainer"></div>
-    <div id="sessionPaymentContainer" style="display:none; margin-top:0.35rem;">
-      <button type="button" id="confirmSessionPaymentButton">Confirm Payment</button>
-      <div id="sessionPaymentMessage" aria-live="polite" style="color:#b07080; font-size:0.85rem; margin-top:0.3rem;"></div>
-    </div>
-  </div>
+          <label class="field-label" for="roomInput">Room code</label>
+          <input type="text" id="roomInput" placeholder="32-character room code" autocapitalize="off" autocomplete="off" spellcheck="false" enterkeyhint="go" />
+          <button type="button" id="rejoinButton" class="btn-secondary">Rejoin Session</button>
+          <p class="hint">Room codes are for the paypup to rejoin or move between devices.</p>
+        </section>
 
-  <div class="payment-buttons" id="paymentButtons">
-    <a id="paypalLink" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener"><button class="pay-btn">Pay with PayPal</button></a>
-    <a href="https://throne.com/fhyrajackal" target="_blank" rel="noopener"><button class="throne-btn">Pay with Throne</button></a>
-  </div>
+        <section class="card" id="roomDisplay" style="display:none;">
+          <div class="room-row">
+            <div class="room-meta">
+              <span class="field-label">Room code</span>
+              <code id="roomCode"></code>
+            </div>
+            <button type="button" id="copyCodeButton" class="btn-small btn-secondary">Copy</button>
+          </div>
+          <p class="hint">Keep this code to rejoin or move between devices.</p>
+          <div id="endButtonContainer">
+            <button type="button" id="endSessionButton" class="btn-danger" style="display:none;">End Session</button>
+          </div>
+        </section>
 
-  <div id="chatBox">
-    <div id="messages"></div>
-    <div id="chatRow">
-      <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off" />
-      <button id="sendBtn" onclick="sendMessage()">Send</button>
-    </div>
-  </div>
+        <section class="card" id="rateControlSection" aria-live="polite" style="display:none;">
+          <div class="card-kicker">Fhyra's control</div>
+          <h2 class="card-title" id="rateControlTitle">Set tribute rate</h2>
+          <div id="currentRateLabel">Current rate: $3.00 / min</div>
+          <label class="field-label" for="rateInput">New rate ($1–$999 / min)</label>
+          <div id="rateControlRow">
+            <div class="rate-input-wrap">
+              <input type="number" id="rateInput" min="1" max="999" step="1" value="3" inputmode="numeric" />
+            </div>
+            <button type="button" id="changeRateButton">Change rate</button>
+          </div>
+          <div class="rate-presets" id="ratePresets">
+            <button type="button" data-rate="3">$3</button>
+            <button type="button" data-rate="5">$5</button>
+            <button type="button" data-rate="10">$10</button>
+            <button type="button" data-rate="20">$20</button>
+            <button type="button" data-rate="50">$50</button>
+          </div>
+          <p class="hint" id="rateControlNote">The new rate applies from this moment forward.</p>
+        </section>
 
-  <div id="accountSummary" aria-live="polite">
-    <div id="accountUsername">Tribute history</div>
-    <div id="accountTotal">Lifetime tribute total: $0.00</div>
-    <div id="accountMessage"></div>
-    <div id="accountNote">Confirmed session payments, extra tributes and drains count toward your lifetime total.</div>
-  </div>
+        <section class="card" id="endSection" style="display:none;">
+          <div class="card-kicker">Session ended</div>
+          <div class="end-amount" id="endFinalAmount">$0.00</div>
+          <div class="hint" id="endFinalMeta"></div>
+          <div class="payment-buttons" id="paymentButtons">
+            <div class="pay-grid">
+              <a id="paypalLink" class="btn btn-paypal" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener">PayPal</a>
+              <a class="btn btn-throne" href="https://throne.com/fhyrajackal" target="_blank" rel="noopener">Throne</a>
+            </div>
+          </div>
+          <div id="sessionPaymentContainer" style="display:none; margin-top:0.5rem;">
+            <button type="button" id="confirmSessionPaymentButton">Confirm Payment</button>
+            <div id="sessionPaymentMessage" aria-live="polite"></div>
+          </div>
+          <div id="resetSessionContainer">
+            <button type="button" id="resetSessionButton" class="btn-secondary" style="display:none;">Reset Session for Both</button>
+          </div>
+        </section>
 
-  <section id="extraTributeSection" aria-live="polite">
-    <button type="button" id="extraTributeStartButton">Show real gratitude, paypup</button>
-    <div id="extraTributeHint" style="display:none;">You will roll an amount from $25 to $250 to worship the true goddess.</div>
-    <div id="extraTributeJoinerLabel" style="display:none; color:#ffc2ce; margin-bottom:0.5rem;">Waiting for extra tribute...</div>
-    <div id="extraTributeDraw">
-      <div id="extraTributeHeading">Your extra tribute amount</div>
-      <div id="extraTributeAmount">$25.00</div>
-      <div id="extraTributeStatus">Rolling for an amount…</div>
-      <div id="extraTributePaymentButtons" class="payment-buttons">
-        <a id="extraPaypalLink" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener"><button type="button" class="pay-btn">Pay with PayPal</button></a>
-        <a href="https://throne.com/fhyrajackal" target="_blank" rel="noopener"><button type="button" class="throne-btn">Pay with Throne</button></a>
+        <section class="card" id="chatBox">
+          <div class="chat-head">
+            <h2 class="card-title">Chat</h2>
+          </div>
+          <div id="messages" aria-live="polite"></div>
+          <div id="chatRow">
+            <input type="text" id="chatInput" placeholder="Type a message…" autocomplete="off" maxlength="500" enterkeyhint="send" aria-label="Chat message" />
+            <button type="button" id="sendBtn">Send</button>
+          </div>
+        </section>
       </div>
-      <button type="button" id="confirmExtraTributeButton" style="display:none">Confirm tribute</button>
-      <div id="extraTributeNote">The tribute will be added to the lifetime total only after payment confirmation.</div>
-    </div>
-  </section>
 
-  <section id="drainSection" aria-live="polite">
-    <button type="button" id="drainStartButton">Click to be Drained</button>
-    <div id="drainHint" style="display:none;">One minute. Every click drains another $2.00 from you. Click as fast as you can, paypup.</div>
-    <div id="drainJoinerLabel" style="display:none;">Waiting for the paypup to be drained...</div>
-    <div id="drainPlay">
-      <div id="drainHeading">Being drained</div>
-      <div id="drainTimer">60.0s</div>
-      <div id="drainTotal">$0.00</div>
-      <div id="drainClicks">0 clicks</div>
-      <button type="button" id="drainClickButton">CLICK</button>
-      <div id="drainStatus"></div>
-      <div id="drainPaymentButtons" class="payment-buttons">
-        <a id="drainPaypalLink" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener"><button type="button" class="pay-btn">Pay with PayPal</button></a>
-        <a href="https://throne.com/fhyrajackal" target="_blank" rel="noopener"><button type="button" class="throne-btn">Pay with Throne</button></a>
+      <div class="col col-side">
+        <section class="card" id="extraTributeSection" aria-live="polite">
+          <div class="card-kicker">Extra tribute</div>
+          <button type="button" id="extraTributeStartButton">Show real gratitude, paypup</button>
+          <div id="extraTributeHint" style="display:none;">You will roll an amount from $25 to $250 to worship the true goddess.</div>
+          <div id="extraTributeJoinerLabel" style="display:none;">Waiting for extra tribute…</div>
+          <div id="extraTributeDraw">
+            <div id="extraTributeHeading">Your extra tribute amount</div>
+            <div id="extraTributeAmount">$25.00</div>
+            <div id="extraTributeStatus">Rolling for an amount…</div>
+            <div id="extraTributePaymentButtons" class="payment-buttons">
+              <div class="pay-grid">
+                <a id="extraPaypalLink" class="btn btn-paypal" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener">PayPal</a>
+                <a class="btn btn-throne" href="https://throne.com/fhyrajackal" target="_blank" rel="noopener">Throne</a>
+              </div>
+            </div>
+            <button type="button" id="confirmExtraTributeButton" style="display:none">Confirm tribute</button>
+            <div id="extraTributeNote">The tribute will be added to the lifetime total only after being sent the displayed amount.</div>
+          </div>
+        </section>
+
+        <section class="card" id="drainSection" aria-live="polite">
+          <div class="card-kicker">Drain</div>
+          <button type="button" id="drainStartButton">Click to be Drained</button>
+          <div id="drainHint" style="display:none;">One minute. Every click drains another $2.00 from you. Click as fast as you can, paypup.</div>
+          <div id="drainJoinerLabel" style="display:none;">Waiting for the paypup to be drained…</div>
+          <div id="drainPlay">
+            <div id="drainHeading">Being drained</div>
+            <div id="drainTimer">60.0s</div>
+            <div class="drain-progress"><div id="drainProgressFill"></div></div>
+            <div id="drainTotal">$0.00</div>
+            <div id="drainClicks">0 clicks</div>
+            <button type="button" id="drainClickButton">CLICK</button>
+            <div id="drainStatus"></div>
+            <div id="drainPaymentButtons" class="payment-buttons">
+              <div class="pay-grid">
+                <a id="drainPaypalLink" class="btn btn-paypal" href="https://paypal.me/fhyrapaypal" target="_blank" rel="noopener">PayPal</a>
+                <a class="btn btn-throne" href="https://throne.com/fhyrajackal" target="_blank" rel="noopener">Throne</a>
+              </div>
+            </div>
+            <button type="button" id="confirmDrainButton" style="display:none">Confirm drain</button>
+            <div id="drainNote">The drain will be added to the lifetime total only after being sent the displayed amount.</div>
+          </div>
+        </section>
+
+        <section class="card" id="accountSummary" aria-live="polite">
+          <div class="card-kicker">Lifetime devotion</div>
+          <div id="accountUsername">Tribute history</div>
+          <div id="accountTotal">$0.00</div>
+          <div class="tier-row"><span id="tierLevel">Level 1 of 7</span><span id="tierNext"></span></div>
+          <div class="tier-bar"><div class="tier-fill" id="tierFill"></div></div>
+          <div id="accountMessage"></div>
+          <div id="accountNote">Confirmed session payments, extra tributes and drains count toward your lifetime total.</div>
+        </section>
       </div>
-      <button type="button" id="confirmDrainButton" style="display:none">Confirm drain</button>
-      <div id="drainNote">The drain will be added to the lifetime total only after payment confirmation.</div>
     </div>
-  </section>
+  </main>
 
+<noscript><p style="text-align:center">This page needs JavaScript enabled.</p></noscript>
 <script>
 // Client-side guardrails help prevent accidental misuse, but cannot enforce security by themselves.
 // Use Firebase Authentication + restrictive Realtime Database rules and server-side validation.
@@ -579,20 +707,17 @@ const firebaseConfig = {
 };
 // =============================================
 
- console.log("Config object:", firebaseConfig);
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 
 const db = firebase.database();
-console.log("Firebase initialized:", firebase.app().options.databaseURL);
 
 // Firebase's server offset keeps sessions aligned even when a phone's clock is wrong.
 let serverTimeOffset = 0;
 db.ref(".info/serverTimeOffset").on("value", (snapshot) => {
   serverTimeOffset = Number(snapshot.val()) || 0;
-  console.log("[SERVER CLOCK] offset ms:", serverTimeOffset);
 });
 function getServerNow() {
   return Date.now() + serverTimeOffset;
@@ -676,6 +801,68 @@ function setStatus(msg) {
   document.getElementById("status").textContent = msg || "";
 }
 
+const moneyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+function formatMoney(value) {
+  return moneyFormatter.format(Number(value) || 0);
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const toast = document.getElementById("toast");
+  toast.textContent = msg;
+  toast.classList.add("show");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+}
+
+// Buttons with lasting consequences need a second tap within a few seconds.
+function armedClick(button, handler, armedText = "Tap again to confirm") {
+  const disarm = () => {
+    clearTimeout(button._armTimer);
+    if (button.dataset.armed === "1") {
+      button.dataset.armed = "";
+      button.classList.remove("armed");
+      if (button.dataset.label) button.textContent = button.dataset.label;
+    }
+  };
+  button.addEventListener("click", (event) => {
+    if (button.disabled) return;
+    if (button.dataset.armed === "1") {
+      disarm();
+      handler(event);
+      return;
+    }
+    button.dataset.label = button.textContent;
+    button.dataset.armed = "1";
+    button.classList.add("armed");
+    button.textContent = armedText;
+    button._armTimer = setTimeout(disarm, 3500);
+  });
+}
+
+function setBusy(button, busy) {
+  if (!button) return;
+  button.disabled = busy;
+  button.classList.toggle("busy", busy);
+}
+
+function renderPresence() {
+  const chip = document.getElementById("presenceChip");
+  const text = document.getElementById("presenceText");
+  if (!currentRoomCode) {
+    chip.hidden = true;
+    return;
+  }
+  chip.hidden = false;
+  if (isInitiator) {
+    chip.classList.toggle("online", joinerHasJoined);
+    text.textContent = joinerHasJoined ? "Fhyra is here" : "Waiting for Fhyra";
+  } else {
+    chip.classList.add("online");
+    text.textContent = initiatorName ? `Paypup: ${initiatorName}` : "Connected";
+  }
+}
+
 function formatTime(ms) {
   const totalSeconds = Math.floor(ms / 1000);
   const h = Math.floor(totalSeconds / 3600).toString().padStart(2, "0");
@@ -752,6 +939,13 @@ function renderRateControl() {
   if (document.activeElement !== input) input.value = String(current.ratePerMinute);
   input.disabled = !isVisible || rateUpdateInProgress || !startTime;
   button.disabled = !isVisible || rateUpdateInProgress || !startTime;
+  document.querySelectorAll("#ratePresets button").forEach((preset) => {
+    preset.disabled = button.disabled;
+  });
+
+  const chip = document.getElementById("rateChip");
+  chip.hidden = !currentRoomCode;
+  chip.textContent = `${formatMoney(current.ratePerMinute)} / min`;
 }
 
 async function changeSessionRate() {
@@ -834,6 +1028,17 @@ function getUsernameAccountKey(name) {
   return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
+const TIER_FLOORS = [0, 250, 500, 1000, 2500, 5000, 10000];
+function getTierIndex(total) {
+  if (total < 250) return 0;
+  if (total <= 500) return 1;
+  if (total <= 1000) return 2;
+  if (total <= 2500) return 3;
+  if (total <= 5000) return 4;
+  if (total <= 10000) return 5;
+  return 6;
+}
+
 function getAccountTierMessage(total) {
   if (total < 250) {
     return "Prove you're worth keeping around, paypup.";
@@ -886,8 +1091,22 @@ function renderAccountSummary() {
   document.getElementById("accountUsername").textContent = sessionAccountUsername
     ? `Tribute history for ${sessionAccountUsername}`
     : "Loading tribute account…";
-  document.getElementById("accountTotal").textContent =
-    `Lifetime tribute total: $${accountTotalAmount.toFixed(2)}`;
+  document.getElementById("accountTotal").textContent = formatMoney(accountTotalAmount);
+
+  const tier = getTierIndex(accountTotalAmount);
+  const floor = TIER_FLOORS[tier];
+  const next = TIER_FLOORS[tier + 1];
+  document.getElementById("tierLevel").textContent = `Level ${tier + 1} of ${TIER_FLOORS.length}`;
+  if (next === undefined) {
+    document.getElementById("tierNext").textContent = "Fully devoured";
+    document.getElementById("tierFill").style.width = "100%";
+  } else {
+    const toGo = Math.max(0, next - accountTotalAmount);
+    document.getElementById("tierNext").textContent = `${formatMoney(toGo)} to next level`;
+    const pct = Math.min(100, Math.max(0, ((accountTotalAmount - floor) / (next - floor)) * 100));
+    document.getElementById("tierFill").style.width = `${pct}%`;
+  }
+
   setTextWithEmphasis(
     document.getElementById("accountMessage"),
     getAccountTierMessage(accountTotalAmount)
@@ -900,6 +1119,7 @@ function setAccountUsername(name) {
 
   const key = getUsernameAccountKey(normalizedName);
   sessionAccountUsername = normalizedName;
+  renderPresence();
   renderExtraTributePanel();
   renderDrainPanel();
   if (sessionAccountKey === key && accountSessionsRef) {
@@ -1177,7 +1397,7 @@ async function confirmExtraTribute() {
     });
 
     if (result.committed) {
-      setStatus(`Extra tribute of $${amount.toFixed(2)} confirmed. Total amount updated.`);
+      setStatus(`Extra tribute of ${formatMoney(amount)} confirmed. Lifetime total updated.`);
     } else {
       button.disabled = false;
       setStatus("This extra tribute has already been confirmed or replaced.");
@@ -1226,7 +1446,7 @@ function getDisplayedDrainClicks(state) {
 }
 
 function updateDrainNumbers(clicks) {
-  document.getElementById("drainTotal").textContent = `$${(clicks * DRAIN_PER_CLICK).toFixed(2)}`;
+  document.getElementById("drainTotal").textContent = formatMoney(clicks * DRAIN_PER_CLICK);
   document.getElementById("drainClicks").textContent = `${clicks} ${clicks === 1 ? "click" : "clicks"} × $${DRAIN_PER_CLICK.toFixed(2)}`;
 }
 
@@ -1244,12 +1464,15 @@ function drainTick() {
   if (now < Number(state.startedAt)) {
     const secs = Math.ceil((Number(state.startedAt) - now) / 1000);
     timerEl.textContent = `Get ready… ${secs}`;
+    document.getElementById("drainProgressFill").style.width = "100%";
     clickButton.disabled = true;
     statusEl.textContent = isInitiator ? "Get your finger ready, paypup." : "The paypup is about to be drained…";
     return;
   }
 
   const remaining = Number(state.endsAt) - now;
+  document.getElementById("drainProgressFill").style.width =
+    `${Math.max(0, Math.min(100, (remaining / DRAIN_DURATION_MS) * 100))}%`;
   if (remaining > 0) {
     timerEl.textContent = `${(remaining / 1000).toFixed(1)}s`;
     clickButton.disabled = false;
@@ -1321,6 +1544,7 @@ function renderDrainPanel() {
   const clicks = Number(state.clicks) || 0;
   document.getElementById("drainHeading").textContent = isInitiator ? "Your drain total" : "Drain total";
   document.getElementById("drainTimer").textContent = "Time's up";
+  document.getElementById("drainProgressFill").style.width = "0%";
   updateDrainNumbers(clicks);
   clickButton.style.display = "none";
   document.getElementById("drainStatus").textContent = isInitiator
@@ -1388,6 +1612,9 @@ function registerDrainClick() {
   drainLocalClicks += 1;
   updateDrainNumbers(getDisplayedDrainClicks(state));
 
+  if (navigator.vibrate) {
+    try { navigator.vibrate(8); } catch (_) {}
+  }
   const button = document.getElementById("drainClickButton");
   button.classList.add("pulse");
   setTimeout(() => button.classList.remove("pulse"), 60);
@@ -1456,7 +1683,7 @@ async function confirmDrain() {
       };
     });
     if (result.committed) {
-      setStatus(`Drain of $${amount.toFixed(2)} confirmed. Lifetime total updated.`);
+      setStatus(`Drain of ${formatMoney(amount)} confirmed. Lifetime total updated.`);
     } else {
       setStatus("This drain has already been confirmed or replaced.");
     }
@@ -1513,8 +1740,7 @@ function updateDisplay() {
   const now = endTime ? Number(endTime) : getServerNow();
   const elapsedMs = Math.max(0, now - Number(startTime));
 
-  document.getElementById("amount").textContent =
-    "$" + getAmountAt(now).toFixed(2);
+  document.getElementById("amount").textContent = formatMoney(getAmountAt(now));
   document.getElementById("time").textContent = formatTime(elapsedMs);
 }
 
@@ -1700,9 +1926,11 @@ function showEndedState() {
   // The joiner controls resetting the shared session. The reset event is
   // written to Firebase so both participants return to the main menu together.
   document.getElementById("endSection").style.display = "block";
-  document.getElementById("resetSessionContainer").innerHTML = isInitiator
-    ? ""
-    : '<button type="button" id="resetSessionButton" onclick="resetSessionForBoth()">Reset Session for Both</button>';
+  document.getElementById("resetSessionButton").style.display = isInitiator ? "none" : "flex";
+  document.getElementById("endFinalAmount").textContent = formatMoney(getFinalAmount());
+  document.getElementById("endFinalMeta").textContent = isInitiator
+    ? `You served Fhyra for ${formatTime(getElapsedMs())}. Pay your tribute below.`
+    : `Served for ${formatTime(getElapsedMs())}. Confirm once the tribute arrives.`;
   if (isInitiator) {
     const finalAmount = getFinalAmount();
     document.getElementById("paypalLink").href = `https://paypal.me/fhyrapaypal/${finalAmount}`;
@@ -1711,12 +1939,16 @@ function showEndedState() {
     document.getElementById("paymentButtons").style.display = "none";
   }
   updateSessionPaymentUI();
-  document.getElementById("endButtonContainer").innerHTML = "";
+  document.getElementById("endSessionButton").style.display = "none";
   document.getElementById("chatInput").disabled = true;
   document.getElementById("sendBtn").disabled = true;
 }
 
 function returnToMainMenu() {
+  if (!isInitiator && joinerPresenceRef) {
+    joinerPresenceRef.remove().catch(() => {});
+  }
+  document.body.classList.remove("in-session");
   // Detach all listeners from the finished room so old Firebase events cannot
   // put the UI back on the ended/payment screen after returning to the menu.
   if (messagesQuery) messagesQuery.off();
@@ -1791,7 +2023,10 @@ function returnToMainMenu() {
   document.getElementById("chatInput").disabled = false;
   document.getElementById("sendBtn").disabled = false;
   document.getElementById("messages").innerHTML = "";
-  document.getElementById("endButtonContainer").innerHTML = "";
+  document.getElementById("endSessionButton").style.display = "none";
+  document.getElementById("resetSessionButton").style.display = "none";
+  document.getElementById("rateChip").hidden = true;
+  document.getElementById("presenceChip").hidden = true;
   document.getElementById("roomDisplay").style.display = "none";
   document.getElementById("chatBox").style.display = "none";
   document.getElementById("accountSummary").style.display = "none";
@@ -1807,7 +2042,7 @@ function returnToMainMenu() {
   document.getElementById("extraTributePaymentButtons").style.display = "none";
   document.getElementById("confirmExtraTributeButton").style.display = "none";
   document.getElementById("accountUsername").textContent = "Tribute history";
-  document.getElementById("accountTotal").textContent = "Lifetime tribute total: $0.00";
+  document.getElementById("accountTotal").textContent = formatMoney(0);
   document.getElementById("accountMessage").textContent = "";
   document.getElementById("paymentButtons").style.display = "none";
   document.getElementById("endSection").style.display = "none";
@@ -1822,30 +2057,16 @@ function returnToMainMenu() {
 let timerInterval = null;
 
 function startLoop() {
-  console.log("[TIMER] startLoop called", {
-    isInitiator,
-    startTime,
-    endTime
-  });
-
   if (timerInterval) {
     clearInterval(timerInterval);
     timerInterval = null;
   }
-
-  if (!startTime || endTime) {
-    console.warn("[TIMER] Not started", { startTime, endTime });
-    return;
-  }
-
+  if (!startTime || endTime) return;
   updateDisplay();
-
-  timerInterval = setInterval(updateDisplay, 1000);
-
-  console.log("[TIMER] Interval running");
+  // 250 ms keeps the cents ticking smoothly; values are always derived from timestamps.
+  timerInterval = setInterval(updateDisplay, 250);
 }
 
-function loop() {}
 
 function spawnBubble() {
   const bubbles = document.getElementById("bubbles");
@@ -1889,16 +2110,31 @@ function stopBubbles() {
   document.getElementById("bubbles").innerHTML = "";
 }
 
-function addMessage(text, isSelf, senderName) {
+let chatInitialLoad = false;
+function addMessage(text, isSelf, senderName, timestamp) {
   const messages = document.getElementById("messages");
+  const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 90;
+  const isSystem = senderName === "System";
   const div = document.createElement("div");
-  div.className = isSelf ? "msg-self" : "msg-other";
-  const senderLabel = document.createElement("strong");
-  senderLabel.textContent = `${senderName || "Unknown"}: `;
-  div.appendChild(senderLabel);
+  div.className = "msg " + (isSystem ? "msg-system" : (isSelf ? "msg-self" : "msg-other")) +
+    (senderName === "Fhyra" ? " msg-goddess" : "");
+
+  if (!isSystem && !isSelf) {
+    const name = document.createElement("span");
+    name.className = "msg-name";
+    name.textContent = senderName || "Unknown";
+    div.appendChild(name);
+  }
   div.appendChild(document.createTextNode(text));
+  const ts = Number(timestamp);
+  if (!isSystem && Number.isFinite(ts) && ts > 0) {
+    const time = document.createElement("span");
+    time.className = "msg-time";
+    time.textContent = new Date(ts - serverTimeOffset).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    div.appendChild(time);
+  }
   messages.appendChild(div);
-  messages.scrollTop = messages.scrollHeight;
+  if (nearBottom || isSelf || chatInitialLoad) messages.scrollTop = messages.scrollHeight;
 }
 
 function startChat(roomCode) {
@@ -1940,6 +2176,9 @@ function startChat(roomCode) {
   endTime = null;
 
   currentRoomCode = String(roomCode);
+  document.body.classList.add("in-session");
+  chatInitialLoad = true;
+  setTimeout(() => { chatInitialLoad = false; }, 2000);
   myName = isInitiator ? (initiatorName || "Initiator") : "Fhyra";
   roomRef = db.ref("rooms/" + currentRoomCode);
   messagesRef = roomRef.child("messages");
@@ -1986,7 +2225,10 @@ rateStateRef.on("value", (snapshot) => {
   // The initiator can start an extra tribute only while the joiner is present.
   if (isInitiator) {
     joinerPresenceRef.on("value", (snapshot) => {
+      const wasHere = joinerHasJoined;
       joinerHasJoined = snapshot.val() === true;
+      if (joinerHasJoined && !wasHere) showToast("Fhyra has joined");
+      renderPresence();
       renderExtraTributePanel();
       renderDrainPanel();
     });
@@ -2098,6 +2340,7 @@ rateStateRef.on("value", (snapshot) => {
   document.getElementById("chatBox").style.display = "block";
   document.getElementById("chatInput").disabled = false;
   document.getElementById("sendBtn").disabled = false;
+  renderPresence();
   renderExtraTributePanel();
   renderDrainPanel();
   renderRateControl();
@@ -2106,7 +2349,7 @@ rateStateRef.on("value", (snapshot) => {
     const msg = snapshot.val();
     if (!msg || typeof msg.text !== "string") return;
     const senderName = typeof msg.sender === "string" && msg.sender.trim() ? msg.sender.trim() : "Unknown";
-    addMessage(msg.text, senderName === myName, senderName);
+    addMessage(msg.text, senderName === myName, senderName, msg.timestamp);
   });
 
   startTimeRef.on("value", (snap) => {
@@ -2143,7 +2386,7 @@ rateStateRef.on("value", (snapshot) => {
 
 function sendMessage() {
   const input = document.getElementById("chatInput");
-  const text = input.value.trim();
+  const text = input.value.trim().slice(0, 500);
   if (!text || !messagesRef) return;
   if (endTime) {
     setStatus("The session has ended, so the chat is read-only.");
@@ -2161,16 +2404,37 @@ function sendMessage() {
   });
 }
 
-document.getElementById("chatInput").addEventListener("keypress", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
+function onEnter(id, handler) {
+  document.getElementById(id).addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.isComposing) {
+      e.preventDefault();
+      handler();
+    }
+  });
+}
+onEnter("chatInput", sendMessage);
+onEnter("initiatorNameInput", initiateSession);
+onEnter("roomInput", joinSession);
+onEnter("rateInput", changeSessionRate);
+document.getElementById("sendBtn").addEventListener("click", sendMessage);
+document.getElementById("initiateButton").addEventListener("click", initiateSession);
+document.getElementById("rejoinButton").addEventListener("click", joinSession);
+document.getElementById("copyCodeButton").addEventListener("click", copyCode);
 document.getElementById("extraTributeStartButton").addEventListener("click", startExtraTributeDraw);
-document.getElementById("confirmExtraTributeButton").addEventListener("click", confirmExtraTribute);
 document.getElementById("drainStartButton").addEventListener("click", startDrain);
 document.getElementById("drainClickButton").addEventListener("click", registerDrainClick);
-document.getElementById("confirmDrainButton").addEventListener("click", confirmDrain);
 document.getElementById("changeRateButton").addEventListener("click", changeSessionRate);
-document.getElementById("confirmSessionPaymentButton").addEventListener("click", confirmSessionPayment);
+document.querySelectorAll("#ratePresets button").forEach((preset) => {
+  preset.addEventListener("click", () => {
+    document.getElementById("rateInput").value = preset.dataset.rate;
+    changeSessionRate();
+  });
+});
+armedClick(document.getElementById("endSessionButton"), endSession, "Tap again to end");
+armedClick(document.getElementById("resetSessionButton"), resetSessionForBoth, "Tap again to reset");
+armedClick(document.getElementById("confirmSessionPaymentButton"), confirmSessionPayment, "Tap again — payment received?");
+armedClick(document.getElementById("confirmExtraTributeButton"), confirmExtraTribute, "Tap again — tribute received?");
+armedClick(document.getElementById("confirmDrainButton"), confirmDrain, "Tap again — drain received?");
 
 // Put these near the top of your script with your real values
 const EMAILJS_PUBLIC_KEY = "6yUaltYoDr-gtit33";
@@ -2182,7 +2446,21 @@ const JOIN_BASE_URL = "https://fhyrajackal.github.io/fhyra-findom";
 
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
+let initiateInProgress = false;
 async function initiateSession() {
+  if (initiateInProgress || currentRoomCode) return;
+  initiateInProgress = true;
+  const button = document.getElementById("initiateButton");
+  setBusy(button, true);
+  try {
+    await createNewSession();
+  } finally {
+    initiateInProgress = false;
+    setBusy(button, false);
+  }
+}
+
+async function createNewSession() {
   const nameInput = document.getElementById("initiatorNameInput");
   const enteredName = normalizeUsername(nameInput.value);
   if (!enteredName) {
@@ -2334,11 +2612,11 @@ async function joinRoomByCode(code, inviteToken = "") {
     setStatus(transactionResult.committed ? "Joined — session started" : "Joined existing session");
 
     startChat(code);
-    document.getElementById("endButtonContainer").innerHTML =
-      '<button class="end-btn" onclick="endSession()">End Session</button>';
+    document.getElementById("endSessionButton").style.display = "flex";
   } catch (error) {
     console.error("Failed to join room:", error);
     // A failed link/code check should leave the menu available for a retry.
+    document.body.classList.remove("in-session");
     document.getElementById("controls").style.display = "block";
     document.getElementById("roomDisplay").style.display = "none";
     document.getElementById("chatBox").style.display = "none";
@@ -2372,7 +2650,21 @@ async function joinRoomByCode(code, inviteToken = "") {
   }
 }
 
+let rejoinInProgress = false;
 async function joinSession() {
+  if (rejoinInProgress || currentRoomCode) return;
+  rejoinInProgress = true;
+  const button = document.getElementById("rejoinButton");
+  setBusy(button, true);
+  try {
+    await rejoinAsInitiator();
+  } finally {
+    rejoinInProgress = false;
+    setBusy(button, false);
+  }
+}
+
+async function rejoinAsInitiator() {
   const code = document.getElementById("roomInput").value.trim().toLowerCase();
 
   if (!ROOM_CODE_PATTERN.test(code)) {
@@ -2461,7 +2753,7 @@ function endSession() {
     });
   }
 
-  document.getElementById("endButtonContainer").innerHTML = "";
+  document.getElementById("endSessionButton").style.display = "none";
 }
 
 function copyToClipboard(text) {
@@ -2488,8 +2780,8 @@ function copyToClipboard(text) {
 function copyCode() {
   const code = document.getElementById("roomCode").textContent;
   copyToClipboard(code)
-    .then(() => alert("Room code copied!"))
-    .catch(() => alert("Copy failed — please select and copy manually"));
+    .then(() => showToast("Room code copied"))
+    .catch(() => showToast("Copy failed — select the code and copy it manually"));
 }
 
 function restoreSavedSession() {
@@ -2512,8 +2804,7 @@ function restoreSavedSession() {
   startChat(saved.code);
 
   if (!isInitiator) {
-    document.getElementById("endButtonContainer").innerHTML =
-      '<button class="end-btn" onclick="endSession()">End Session</button>';
+    document.getElementById("endSessionButton").style.display = "flex";
   }
   return true;
 }
