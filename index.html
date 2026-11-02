@@ -856,7 +856,7 @@ function renderPresence() {
   chip.hidden = false;
   if (isInitiator) {
     chip.classList.toggle("online", joinerHasJoined);
-    text.textContent = joinerHasJoined ? "Fhyra is here" : "Waiting for Fhyra";
+    text.textContent = joinerHasJoined ? "In Fhyra´s divine presence" : "Waiting for Fhyra";
   } else {
     chip.classList.add("online");
     text.textContent = initiatorName ? `Paypup: ${initiatorName}` : "Connected";
